@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">2B</string>
+    <string name="channel_overlay">2B na tela</string>
+    <string name="overlay_running">2B está na tela</string>
+    <string name="overlay_stop">Esconder</string>
+    <string name="capture_running">Lendo a tela uma vez</string>
+    <string name="open_2b">Abrir a 2B</string>
+</resources>

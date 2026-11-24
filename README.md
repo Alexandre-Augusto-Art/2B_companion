@@ -1,0 +1,53 @@
+# 2B Companion
+
+Companheira de IA do [0FF-GR1D](https://alexandre-augusto-art.github.io/0FF-GR1D_WEB/). Conversa, checa links e boatos,
+orienta sobre segurança digital e manifestações. A IA roda no aparelho.
+
+**Estado: 0.1, em desenvolvimento.** O Android compila, mas ainda não foi testado em celular. O Windows é só a base. A IA foi testada no Windows com
+Qwen3 0.6B e Gemma 4 E2B (texto e imagem).
+
+## O que faz
+
+- Conversa por cima de outros apps (bolha) ou como assistente do Android.
+- Lê a tela quando você pede. A leitura só é usada se você enviar.
+- Analisa links sem abri-los, com as mesmas regras do Fact Check do site.
+- Responde com o conteúdo do 0FF-GR1D e guias embutidos, mostrando as fontes.
+- Busca na web só quando você liga, pergunta por pergunta.
+- Funciona sem modelo (guias e links) e offline depois de baixar um.
+- Memória que você controla, inspetor do que a IA viu e do que saiu do aparelho, e botão de pânico.
+
+## O que não faz
+
+Não clica nem digita por você, não vigia a tela, não ouve o microfone, não abre links recebidos e não tem telemetria própria.
+
+## Compilar
+
+Precisa de JDK 21 e Android SDK (plataforma 37.0). Defina `ANDROID_HOME`. Android 10 ou mais novo.
+
+```
+./gradlew :core:test                  # testes do núcleo
+./gradlew :androidApp:assembleDebug   # APK em androidApp/build/outputs/apk/debug
+./gradlew :desktopApp:run             # Windows
+```
+
+Se o Gradle falhar com `Unable to establish loopback connection` no Windows, defina
+`JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=C:/pasta-que-nao-existe` e tente de novo: isso faz o Java usar TCP.
+
+## Organização
+
+| Pasta | O que tem |
+|---|---|
+| `core` | cérebro: busca local, links, prompt, modelos, rede, dados cifrados. Sem Android nem Windows |
+| `ui` | telas em Compose, iguais nos dois sistemas |
+| `androidApp` | bolha, captura, assistente, Keystore |
+| `desktopApp` | janela flutuante, captura, DPAPI |
+
+Voz e regras da 2B: `core/.../chat/Persona.kt`. Guias: `core/src/main/resources/seed/guides.json`.
+
+Mais: [privacidade](docs/PRIVACIDADE.md) · [arte da personagem](docs/AVATAR.md) · [próximos passos](docs/ROADMAP.md)
+
+## Licença
+
+Código sob [MIT](LICENSE). A imagem da personagem e o nome não fazem parte dessa licença. O conteúdo baixado do site e
+das agências pertence aos seus autores. Motor: [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) (Apache-2.0).
+Modelos Gemma 4 E2B e Qwen3 0.6B (Apache-2.0) são baixados à parte.
