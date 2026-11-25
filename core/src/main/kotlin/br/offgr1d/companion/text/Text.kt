@@ -6,7 +6,8 @@ object Text {
     private val STOPWORDS = ("a o as os um uma uns umas de do da dos das em no na nos nas por para pra com sem e ou que " +
         "se me te eu voce voces ele ela isso isto esse essa este esta aqui ai la como qual quais quando onde quero queria " +
         "tem ter tenho sobre mais muito pouco ja nao sim eh ser sao estou meu minha seu sua algum alguma coisa favor oi ola " +
-        "fala explica explicar saber tela resuma resumir resumo aparece print foi vai pode posso deve tudo").split(' ').toSet()
+        "fala explica explicar saber tela resuma resumir resumo aparece print foi vai pode posso deve tudo " +
+        "jeito simples facil explique melhor entendi acha acho conta conte agora entao mesmo dia hoje fui fomos sou somos estava era aconteceu acabei acabaram acabou").split(' ').toSet()
 
     private val MARKS = Regex("\\p{Mn}+")
     private val NON_WORD = Regex("[^a-z0-9\\s-]")

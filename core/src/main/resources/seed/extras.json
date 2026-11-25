@@ -1,0 +1,49 @@
+{
+  "entries": [
+    {
+      "id": "alt-tools",
+      "title": "ALT3RN4T1V3 T00LS",
+      "link": "alt-tools.html",
+      "answer": "O ALT3RN4T1V3 T00LS lista ferramentas livres e abertas para sair das big techs: mensageiro, navegador, e-mail, redes do fediverso e mais, com etiquetas que explicam o quanto cada uma protege. Não precisa trocar tudo de uma vez: comece pelo mensageiro e pelo navegador.",
+      "examples": [
+        "alternativas ao google",
+        "alternativa ao whatsapp",
+        "apps seguros",
+        "sair das big techs",
+        "ferramentas livres"
+      ],
+      "keywords": [
+        "alternativa",
+        "alternativas",
+        "alt",
+        "tools",
+        "livre",
+        "fediverso",
+        "mastodon",
+        "navegador",
+        "big",
+        "tech"
+      ]
+    },
+    {
+      "id": "bitchat",
+      "title": "Bitchat",
+      "link": "bitchat.html",
+      "answer": "O Bitchat é um mensageiro que funciona sem internet: as mensagens passam de celular em celular por Bluetooth. Não pede número, e-mail nem conta. Útil em atos com a rede congestionada, apagões e lugares sem sinal. Instale antes de sair de casa e combine com o grupo, porque só funciona com mais gente por perto usando.",
+      "examples": [
+        "chat sem internet",
+        "conversar sem sinal no ato",
+        "mensagem por bluetooth"
+      ],
+      "keywords": [
+        "bitchat",
+        "bluetooth",
+        "mesh",
+        "malha",
+        "offline",
+        "sinal",
+        "apagao"
+      ]
+    }
+  ]
+}

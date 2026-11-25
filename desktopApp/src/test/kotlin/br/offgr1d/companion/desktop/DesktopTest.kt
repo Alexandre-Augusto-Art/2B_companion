@@ -1,9 +1,12 @@
 package br.offgr1d.companion.desktop
 
+import kotlinx.coroutines.runBlocking
+import kotlin.test.assertEquals
+import br.offgr1d.companion.store.Settings
+import br.offgr1d.companion.chat.Tool
 import br.offgr1d.companion.llm.LiteRtEngine
 import br.offgr1d.companion.store.BlobStore
 import java.io.File
-import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertFails
@@ -13,7 +16,26 @@ import kotlin.test.assertTrue
 /** Só roda no Windows. */
 class DesktopTest {
     private val windows = System.getProperty("os.name").startsWith("Windows")
-    private val dir = Files.createTempDirectory("2b-desktop").toFile()
+    private val dir = tempDir("2b-desktop")
+
+    /** Opcional, LIVE=1: consulta o site de verdade. */
+    @Test fun `site no ar alimenta atalhos e avisos`() {
+        if (System.getenv("LIVE") != "1") return
+        runBlocking {
+            val app = createCompanion(dir)
+            app.awaitReady()
+            for (t in Tool.entries) {
+                app.send(t.ask)!!.join()
+                println("\n### ${t.label}\n" + app.state.value.messages.last().text)
+                assertFalse("Não consegui atualizar" in app.state.value.messages.last().text)
+            }
+            app.saveSettings(Settings(alertW4k3 = true, alertQuote = true, alertActs = true))
+            assertEquals(0, app.checkAlerts()!!.size)
+            assertEquals(0, app.checkAlerts()!!.size)
+            println(app.state.value.net.map { "${it.url} ${it.result}" })
+            app.panic(includeModels = true).join()
+        }
+    }
 
     @Test fun `cifra com a conta do Windows e o pânico destrói a chave`() {
         if (!windows) return

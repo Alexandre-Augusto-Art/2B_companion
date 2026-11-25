@@ -1,7 +1,15 @@
 package br.offgr1d.companion.chat
 
+import br.offgr1d.companion.alerts.Alert
+import br.offgr1d.companion.alerts.AlertFeed
+import br.offgr1d.companion.alerts.AlertState
+import br.offgr1d.companion.alerts.Alerts
+import br.offgr1d.companion.knowledge.Daily
+import br.offgr1d.companion.knowledge.Doc
 import br.offgr1d.companion.knowledge.DocKind
+import br.offgr1d.companion.knowledge.FeedParser
 import br.offgr1d.companion.knowledge.KnowledgeBase
+import br.offgr1d.companion.knowledge.todayBR
 import br.offgr1d.companion.links.LinkReport
 import br.offgr1d.companion.links.Verdict
 import br.offgr1d.companion.llm.LlmEngine
@@ -18,6 +26,7 @@ import br.offgr1d.companion.store.AppData
 import br.offgr1d.companion.store.BlobStore
 import br.offgr1d.companion.store.SavedMessage
 import br.offgr1d.companion.store.Settings
+import br.offgr1d.companion.text.Text
 import br.offgr1d.companion.web.WebSearch
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -35,6 +44,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class Mood { IDLE, THINKING, TALKING, ALERT }
 
@@ -44,6 +54,11 @@ data class ChatMessage(
     val sources: List<Source> = emptyList(),
     val links: List<LinkReport> = emptyList(),
     val withScreen: Boolean = false,
+    /** Aviso que chegou sozinho, sem pergunta. */
+    val alert: Alert? = null,
+    val tool: Tool? = null,
+    /** Guia conferido, mostrado junto da resposta da IA. */
+    val guide: Doc? = null,
     /** Escrito pela IA: a interface avisa que pode errar. */
     val generated: Boolean = false,
     val interrupted: Boolean = false,
@@ -58,7 +73,13 @@ data class UiState(
     val status: String = "",
     val mood: Mood = Mood.IDLE,
     val screen: ScreenContext? = null,
-    val web: Boolean = false,
+    /** Com a leitura automática ligada, a tela já usada só volta se a pergunta falar dela. */
+    val screenUsed: Boolean = false,
+    val daily: Daily = Daily(),
+    val pages: List<Doc> = emptyList(),
+    val alerts: List<Alert> = emptyList(),
+    /** Muda quando a interface deve mostrar a conversa (a pessoa tocou numa notificação). */
+    val chatFocus: Int = 0,
     val settings: Settings = Settings(),
     val memories: List<String> = emptyList(),
     val docs: Int = 0,
@@ -78,19 +99,25 @@ class Companion2B(
     private val cacheDir: File,
     private val engineFactory: () -> LlmEngine,
     private val idleUnloadMs: Long = 5 * 60_000,
+    /** Só para testes: troca a rede dos feeds e o que conta como modelo pronto. */
+    fetch: ((String) -> String)? = null,
+    modelReady: ((ModelSpec) -> Boolean)? = null,
 ) {
     private val blobs = store
     private val data = AppData(store)
     private val netLog = NetLog()
     private val http = SafeHttp(netLog) { _state.value.settings.useTor }
     private val models = ModelStore(modelDir, http)
+    private val isReady = modelReady ?: models::isReady
     private val web = WebSearch(http)
-    private val kb = KnowledgeBase(store) { http.text(it, "atualizar conteúdo do 0FF-GR1D") }
+    private val kb = KnowledgeBase(store, fetch = fetch ?: { http.text(it, "atualizar conteúdo do 0FF-GR1D") })
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private val engineLock = Mutex()
+    private val alertLock = Mutex()
+    @Volatile private var alertState = AlertState()
     private var engine: LlmEngine? = null
     private var engineKey = ""
     private var turnJob: Job? = null
@@ -105,11 +132,13 @@ class Companion2B(
         val settings = safe("ajustes", Settings(), data::settings)
         val memories = safe("memórias", emptyList(), data::memories)
         val history = if (settings.saveHistory) safe("conversas", emptyList(), data::history) else emptyList()
+        alertState = safe("avisos", AlertState(), data::alerts)
         _state.update {
             it.copy(
-                settings = settings, memories = memories, docs = kb.index.docs.size,
-                messages = listOf(ChatMessage(false, Persona.GREETINGS.random())) +
-                    history.map { m -> ChatMessage(m.fromUser, m.text) },
+                settings = settings, memories = memories, docs = kb.index.docs.size, daily = kb.daily, pages = Toolbox.pages(kb.index.docs),
+                alerts = alertState.inbox,
+                messages = listOf(ChatMessage(false, Persona.greeting())) + history.map { m -> ChatMessage(m.fromUser, m.text) } +
+                    alertState.inbox.filter { a -> !a.read }.map(::alertMessage),
                 readyModels = ready(),
                 notice = problems.takeIf { p -> p.isNotEmpty() }?.let { p -> "Não consegui ler: ${p.joinToString()}." },
             )
@@ -118,7 +147,7 @@ class Companion2B(
 
     suspend fun awaitReady() = startJob.join()
 
-    private fun ready() = ModelCatalog.ALL.filter(models::isReady).map { it.id }.toSet()
+    private fun ready() = ModelCatalog.ALL.filter(isReady).map { it.id }.toSet()
     private fun model(): ModelSpec = ModelCatalog.byId(_state.value.settings.modelId)
     private fun syncNet() = _state.update { it.copy(net = netLog.events) }
 
@@ -126,10 +155,11 @@ class Companion2B(
 
     fun attachScreen(s: ScreenContext?) = _state.update {
         if (s != null && s.isEmpty) it.copy(screen = null, notice = "Não consegui ler esta tela. O app pode bloquear capturas.")
-        else it.copy(screen = s)
+        else it.copy(screen = s, screenUsed = false)
     }
 
-    fun setWeb(on: Boolean) = _state.update { it.copy(web = on) }
+    fun setWeb(on: Boolean) = saveSettings(_state.value.settings.copy(web = on))
+    fun focusChat() = _state.update { it.copy(chatFocus = it.chatFocus + 1) }
     fun dismissNotice() = _state.update { it.copy(notice = null) }
     fun notice(text: String) = _state.update { it.copy(notice = text) }
 
@@ -138,16 +168,27 @@ class Companion2B(
         val s = _state.value
         if (question.isEmpty() || s.busy) return null
         val history = historyOf(s.messages.drop(1))
-        // Tela e web valem só para esta pergunta.
+        val lastTool = s.messages.lastOrNull()?.tool
+        val tool = Toolbox.match(question) ?: Toolbox.followUp(lastTool, question)
+        val casual = SmallTalk.isCasual(question)
+        // Leitura manual vale para uma pergunta. Automática: a primeira sobre a tela e as que falarem dela de novo.
+        val auto = s.settings.autoScreen
+        val aboutScreen = SCREEN_WORDS.containsMatchIn(Text.normalize(question))
+        val screen = s.screen?.takeIf { tool == null && (!auto || aboutScreen || (!s.screenUsed && !casual)) }
+        // Avisos mostrados depois da última pergunta: a pessoa pode estar respondendo a eles.
+        val alerts = s.messages.takeLastWhile { !it.fromUser }.mapNotNull { it.alert }.map { "${it.title}\n${it.text}" } +
+            listOfNotNull(s.daily.reflections.firstOrNull()?.takeIf { lastTool == Tool.NEWS }?.let { "OPINIÃO do W4K3 PR0T0C0L: ${it.title}\n${it.content}" })
         _state.update {
             it.copy(
-                messages = it.messages + ChatMessage(true, question, withScreen = s.screen != null),
-                busy = true, status = "lendo", mood = Mood.THINKING, screen = null, web = false, notice = null,
+                messages = it.messages + ChatMessage(true, question, withScreen = screen != null),
+                busy = true, status = "lendo", mood = Mood.THINKING, notice = null,
+                screen = if (auto || screen == null) it.screen else null, screenUsed = it.screenUsed || screen != null,
             )
         }
         return scope.launch {
             try {
-                answer(question, history, s.screen, s.web)
+                if (tool != null && !Crisis.detect(question)) useTool(tool, question)
+                else answer(question, history, screen, s.settings.web, casual, alerts)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -172,7 +213,27 @@ class Companion2B(
     private fun addAnswer(text: String, mood: Mood, sources: List<Source> = emptyList(), links: List<LinkReport> = emptyList()) =
         _state.update { it.copy(messages = it.messages + ChatMessage(false, text, sources, links), mood = mood) }
 
-    private suspend fun answer(question: String, history: List<Turn>, screen: ScreenContext?, useWeb: Boolean) {
+    /** Conteúdo do 0FF-GR1D, baixado na hora se a cópia for velha. Não passa pela IA. */
+    private suspend fun useTool(tool: Tool, question: String) {
+        var stale = false
+        tool.feed?.takeIf { !kb.fresh(it, FRESH_MS) }?.let { feed ->
+            _state.update { it.copy(status = "buscando no 0FF-GR1D") }
+            stale = withContext(Dispatchers.IO) { kb.update(listOf(feed)) }.failed.isNotEmpty()
+            syncContent()
+        }
+        val s = _state.value
+        val a = Toolbox.answer(tool, question, kb.daily, kb.index.docs, s.settings.alertUfs, todayBR(), stale)
+        _state.update { it.copy(messages = it.messages + ChatMessage(false, a.text, a.sources, tool = tool), mood = Mood.IDLE) }
+    }
+
+    /** Toque num atalho do 0FF-GR1D. */
+    fun use(tool: Tool) = send(tool.ask)
+
+    private fun syncContent() = _state.update {
+        it.copy(docs = kb.index.docs.size, daily = kb.daily, pages = Toolbox.pages(kb.index.docs), net = netLog.events)
+    }
+
+    private suspend fun answer(question: String, history: List<Turn>, screen: ScreenContext?, useWeb: Boolean, casual: Boolean, alerts: List<String>) {
         REMEMBER.matchEntire(question)?.let { m ->
             val fact = m.groupValues[1].trim().trimEnd('.')
             addMemory(fact)
@@ -183,9 +244,10 @@ class Companion2B(
         if (crisis) addAnswer(Crisis.NOTE, Mood.IDLE)
 
         val links = kb.links.analyzeAll(question + "\n" + screen?.text.orEmpty())
-        val hits = kb.index.search(question)
+        val chat = casual && screen == null && links.isEmpty()
+        val hits = if (chat) emptyList() else kb.index.search(question)
         var webFailed: String? = null
-        val results = if (!useWeb || crisis) emptyList() else {
+        val results = if (!useWeb || crisis || chat) emptyList() else {
             _state.update { it.copy(status = "buscando na web") }
             runCatching { withContext(Dispatchers.IO) { web.search(question, _state.value.settings.searxUrl) } }
                 .getOrElse { webFailed = it.message; emptyList() }
@@ -193,8 +255,9 @@ class Companion2B(
         if (webFailed != null) notice("A busca na web falhou: $webFailed")
 
         val spec = model()
-        val hasModel = models.isReady(spec)
-        val prompt = PromptBuilder.build(question, hits, results, links, screen, history, _state.value.memories, spec.vision && hasModel)
+        val hasModel = isReady(spec)
+        val prompt = PromptBuilder.build(question, hits, results, links, screen, history, _state.value.memories, spec.vision && hasModel,
+            alerts = alerts, casual = chat)
         if (prompt.ordersRemoved) notice("Cuidado: este conteúdo tinha texto tentando dar ordens à IA. Tirei esse trecho.")
         _state.update {
             it.copy(trace = Trace(prompt.request.system, prompt.request.user, prompt.request.history.size, prompt.request.image != null, hasModel))
@@ -203,6 +266,7 @@ class Companion2B(
         val fixedText = !spec.advises && screen == null && (links.isNotEmpty() || hits.firstOrNull()?.doc?.kind == DocKind.GUIA)
         if (!hasModel || fixedText) {
             _state.update { it.copy(trace = it.trace?.copy(usedModel = false)) }
+            SmallTalk.withoutModel(question)?.takeIf { chat && !hasModel }?.let { return addAnswer(it, Mood.IDLE) }
             val text = withoutModel(prompt.sources, hits.map { it.doc.text }, links)
             addAnswer(if (hasModel) text else "$text\n\n(Modo sem modelo: baixe um em Modelos para conversar.)", mood(links), prompt.sources, links)
             return
@@ -210,7 +274,26 @@ class Companion2B(
         if (screen?.image != null && !spec.vision && screen.text.isNullOrBlank()) {
             notice("${spec.name} não entende imagens. Use um modelo com visão para ler esta tela.")
         }
-        generate(spec, prompt.request, prompt.sources, links)
+        val q = Text.normalize(question)
+        val urgent = if (chat) null else kb.index.search(question, limit = 12).firstOrNull { URGENT[it.doc.id]?.containsMatchIn(q) == true }?.doc
+        val guide = (urgent ?: hits.firstOrNull()?.doc)?.takeIf { it.kind == DocKind.GUIA && screen == null }
+        // Urgência e direitos: vale o texto conferido. A IA pode trocar uma palavra e mudar o sentido ("saia contra o vento").
+        if (guide != null && guide === urgent && links.isEmpty() && _state.value.messages.none { it.guide?.id == guide.id }) {
+            _state.update {
+                it.copy(
+                    trace = it.trace?.copy(usedModel = false), mood = Mood.IDLE,
+                    messages = it.messages + ChatMessage(
+                        false, if (guide.id == "guia:direitos-ato") "Isso você precisa ter na ponta da língua:\n\n${guide.text}"
+                        else "Tô contigo. Faz isso, com calma:\n\n${guide.text}\n\nMe conta como você está e em que passo travou.",
+                        listOf(Source(1, guide.title, guide.source.orEmpty(), guide.url)), guide = guide,
+                    ),
+                )
+            }
+            return
+        }
+        // Sem citação, só aparece fonte que orienta: opinião ou notícia solta confundiria.
+        val loose = prompt.sources.filter { s -> hits.getOrNull(s.n - 1)?.doc?.kind.let { it == null || it == DocKind.GUIA || it == DocKind.FERRAMENTA } }
+        generate(spec, prompt.request, prompt.sources, links, guide, loose)
     }
 
     /** Pergunta interrompida ou sem resposta fica fora: o modelo voltaria a respondê-la. */
@@ -245,7 +328,7 @@ class Companion2B(
         return parts.joinToString("\n\n")
     }
 
-    private suspend fun generate(spec: ModelSpec, request: LlmRequest, sources: List<Source>, links: List<LinkReport>) {
+    private suspend fun generate(spec: ModelSpec, request: LlmRequest, sources: List<Source>, links: List<LinkReport>, guide: Doc?, loose: List<Source>) {
         unloadJob?.cancel()
         engineLock.withLock {
             val settings = _state.value.settings
@@ -275,11 +358,11 @@ class Companion2B(
             val used = CITATION.findAll(raw).map { it.groupValues[1].toInt() }.toSet()
             _state.update {
                 val last = it.messages.last()
-                // Mostra as fontes citadas; se não citou nenhuma, mostra todas as consultadas.
-                val shown = sources.filter { s -> s.n in used }.ifEmpty { sources }
+                // Mostra as fontes citadas; se não citou nenhuma, as que orientam.
+                val shown = sources.filter { s -> s.n in used }.ifEmpty { loose.take(2) }
                 it.copy(
                     messages = it.messages.dropLast(1) + last.copy(
-                        text = last.text.trim().ifEmpty { "Não consegui formar uma resposta. Tente perguntar de outro jeito." }, sources = shown, links = allLinks, interrupted = false),
+                        text = last.text.trim().ifEmpty { "Não consegui formar uma resposta. Tente perguntar de outro jeito." }, sources = shown, links = allLinks, guide = guide, interrupted = false),
                     mood = mood(allLinks),
                 )
             }
@@ -307,7 +390,8 @@ class Companion2B(
 
     fun clearChat() {
         if (_state.value.busy) return
-        _state.update { it.copy(messages = listOf(ChatMessage(false, Persona.GREETINGS.random())), trace = null, screen = null) }
+        _state.update { it.copy(messages = listOf(ChatMessage(false, Persona.greeting())), trace = null, screen = null) }
+        markAlertsRead()
         scope.launch(Dispatchers.IO) { data.saveHistory(emptyList()) }
     }
 
@@ -335,9 +419,10 @@ class Companion2B(
 
     fun saveSettings(s: Settings) {
         if (s.searxUrl.isNotBlank() && !s.searxUrl.trim().startsWith("https://")) return notice("O endereço do SearXNG precisa começar com https://")
-        _state.update { it.copy(settings = s) }
+        _state.update { it.copy(settings = s, screen = if (it.settings.autoScreen && !s.autoScreen) null else it.screen) }
         scope.launch(Dispatchers.IO) {
             runCatching {
+                if (wiping) return@launch
                 data.save(s)
                 if (s.saveHistory) data.saveHistory(_state.value.messages.drop(1).map { SavedMessage(it.fromUser, it.text) })
                 else data.saveHistory(emptyList())
@@ -350,9 +435,10 @@ class Companion2B(
     fun updateContent(): Job = scope.launch {
         _state.update { it.copy(status = "atualizando conteúdo") }
         val r = withContext(Dispatchers.IO) { kb.update() }
+        syncContent()
         _state.update {
             it.copy(
-                status = "", docs = kb.index.docs.size, net = netLog.events,
+                status = "",
                 notice = if (r.failed.isEmpty()) "Conteúdo atualizado." else
                     "Atualizei ${r.ok.size} de ${r.ok.size + r.failed.size}. Falhou: ${r.failed.keys.joinToString()}.",
             )
@@ -388,6 +474,77 @@ class Companion2B(
         }
     }
 
+    // ---------- avisos ----------
+
+    private fun alertMessage(a: Alert) = ChatMessage(
+        false, "${a.voice}\n\n${a.title}\n${a.text}", listOf(Source(1, "Abrir no 0FF-GR1D", a.feed.label, a.url)), alert = a,
+    )
+
+    /**
+     * Procura novidades dos assuntos ligados. Cada uma vira mensagem da 2B; quem chama mostra a notificação.
+     * @return avisos novos, ou null se não deu para consultar
+     */
+    suspend fun checkAlerts(): List<Alert>? {
+        awaitReady()
+        val on = Alerts.enabled(_state.value.settings)
+        if (on.isEmpty() || wiping) return emptyList()
+        return withContext(Dispatchers.IO) {
+            val r = kb.update(on.map { it.feed }) // sem a trava: o pânico não espera a rede
+            syncContent()
+            if (r.ok.isEmpty()) return@withContext null
+            alertLock.withLock {
+                if (wiping) return@withLock emptyList()
+                // A pessoa pode ter mudado as escolhas enquanto baixava.
+                val (next, fresh) = Alerts.collect(alertState, kb.daily, _state.value.settings, r.ok.toSet(), todayBR())
+                if (next != alertState) {
+                    data.saveAlerts(next) // grava antes de mostrar: reiniciar não repete o aviso
+                    alertState = next
+                    _state.update { it.copy(alerts = next.inbox, messages = insertAlerts(it, fresh)) }
+                }
+                fresh
+            }
+        }
+    }
+
+    /** No meio de uma resposta, o aviso entra antes da pergunta em andamento, para não atrapalhar o texto que chega. */
+    private fun insertAlerts(s: UiState, fresh: List<Alert>): List<ChatMessage> {
+        val at = if (s.busy) s.messages.indexOfLast { it.fromUser }.coerceAtLeast(0) else s.messages.size
+        return s.messages.take(at) + fresh.map(::alertMessage) + s.messages.drop(at)
+    }
+
+    /** Chamado quando a conversa está na tela. */
+    fun markAlertsRead() {
+        if (alertState.inbox.all { it.read }) return
+        scope.launch(Dispatchers.IO) {
+            alertLock.withLock {
+                if (wiping) return@withLock
+                alertState = alertState.copy(inbox = alertState.inbox.map { it.copy(read = true) })
+                _state.update { it.copy(alerts = alertState.inbox) }
+                runCatching { data.saveAlerts(alertState) }
+            }
+        }
+    }
+
+    /** Um aviso de exemplo, com o que já foi baixado. */
+    fun sampleAlert(): Alert = kb.daily.quotes.firstOrNull()?.let(Alerts::quote)
+        ?: Alert(AlertFeed.QUOTE, "teste", "Aviso de teste", "Se você está lendo isto, os avisos funcionam.", "2B na linha.", FeedParser.SITE + "motivacao.html")
+
+    // ---------- limpeza automática ----------
+
+    private var clearJob: Job? = null
+
+    /** A 2B saiu da frente: com a limpeza automática ligada, apaga a conversa depois de um tempo. */
+    fun onHidden(delayMs: Long = 60_000) {
+        clearJob?.cancel()
+        clearJob = scope.launch {
+            delay(delayMs)
+            while (_state.value.busy) delay(500)
+            if (_state.value.settings.autoClear) clearChat()
+        }
+    }
+
+    fun onVisible() { clearJob?.cancel() }
+
     // ---------- pânico ----------
 
     @Volatile private var wiping = false
@@ -398,20 +555,26 @@ class Companion2B(
         try {
             // A tela some antes de qualquer espera.
             _state.update { UiState(docs = it.docs, busy = true, status = "apagando") }
-            downloadJob?.cancelAndJoin()
-            turnJob?.cancelAndJoin()
+            // Rede parada não pode segurar a limpeza: o que sobrar não consegue mais gravar.
+            withTimeoutOrNull(1500) {
+                downloadJob?.cancelAndJoin()
+                turnJob?.cancelAndJoin()
+            }
             unloadJob?.cancelAndJoin()
-            engineLock.withLock { closeEngine() }
-            val ok = withContext(NonCancellable + Dispatchers.IO) {
+            val ok = alertLock.withLock { withContext(NonCancellable + Dispatchers.IO) {
+                alertState = AlertState()
+                kb.forgetFetches()
                 var all = blobs.wipe()
+                engineLock.withLock { closeEngine() }
                 if (includeModels) all = models.deleteAll() && all
                 all = File(cacheDir, "llm").let { !it.exists() || it.deleteRecursively() } && all
                 netLog.clear()
                 kb.load()
                 all
-            }
+            } }
             _state.value = UiState(
                 messages = listOf(ChatMessage(false, "Tudo limpo.")), docs = kb.index.docs.size, readyModels = ready(),
+                pages = Toolbox.pages(kb.index.docs), settings = Settings(alertsAsked = true),
                 notice = if (ok) null else "Algum arquivo não pôde ser apagado. Desinstale o app para garantir.",
             )
         } finally {
@@ -421,6 +584,17 @@ class Companion2B(
 
     companion object {
         private val REMEMBER = Regex("(?is)(?:lembre|lembra|guarde|guarda|memorize)(?:-se)?\\s+(?:de\\s+)?que\\s+(.+)")
+        private val SCREEN_WORDS = Regex("\\b(tela|aqui|print|imagem|captura|isso|isto|essa?|esta|este|mensagem|pagina|transcrev\\w*|resum\\w*|traduz\\w*)\\b")
+        /** Guia urgente e o que a pessoa precisa dizer para ele valer. */
+        private val URGENT = mapOf(
+            "guia:cai-no-golpe" to Regex("(^| )(cai|caiu|caimos|perdi|roubaram|transferi|enganad|fiz um pix|mandei um pix)"),
+            "guia:conta-invadida" to Regex("(^| )(invad|hacke|clon)"),
+            "guia:exposicao" to Regex("(^| )(expus|expos|vaz|ameac|persegu|stalk)"),
+            "guia:detido-ato" to Regex("(^| )(detid|preso|presa|prend|delegacia|levad)"),
+            "guia:direitos-ato" to Regex("(^| )direitos?( |$).*(ato|atos|protest|manifest|polic|abord|pres[oa]|detid)"),
+            "guia:gas-ato" to Regex("(^| )(gas|gases|lacrimo|spray|bomba)( |$)"),
+        )
+        private const val FRESH_MS = 10 * 60_000L
         private val CITATION = Regex("\\[(\\d{1,2})]")
     }
 }

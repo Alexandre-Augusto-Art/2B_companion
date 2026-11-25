@@ -47,9 +47,9 @@ class KnowledgeIndex(val docs: List<Doc>) {
             }
             val matched = terms.filter { it in e.tf }
             val coverage = matched.sumOf(::idf) / totalIdf
-            val eventBrowse = d.kind == DocKind.ATO && wantsEvents
+            val eventBrowse = d.kind == DocKind.ATO && wantsEvents && uf != null
             val quoteBrowse = d.kind == DocKind.FRASE && wantsQuote
-            if (coverage < MIN_COVERAGE && !eventBrowse && !quoteBrowse) return@mapNotNull null
+            if (coverage < (if (d.kind == DocKind.REFLEXAO) 0.5 else MIN_COVERAGE) && !eventBrowse && !quoteBrowse) return@mapNotNull null
 
             var score = matched.sumOf { t ->
                 val f = e.tf.getValue(t)
@@ -63,6 +63,8 @@ class KnowledgeIndex(val docs: List<Doc>) {
             score *= when (d.kind) {
                 DocKind.REFLEXAO -> 0.6
                 DocKind.GUIA -> 1.15
+                // Falar de protesto não é pedir a agenda: sem estado, ato só entra se for bem parecido.
+                DocKind.ATO -> if (uf == null) 0.5 else 1.0
                 else -> 1.0
             }
             d.date?.let { date -> daysAgo(date, today)?.let { score *= 1 + 0.15 / (1 + it.coerceAtLeast(0) / 14.0) } }
@@ -85,12 +87,21 @@ class KnowledgeIndex(val docs: List<Doc>) {
             "RN" to "Rio Grande do Norte", "RS" to "Rio Grande do Sul", "RO" to "Rondônia", "RR" to "Roraima",
             "SC" to "Santa Catarina", "SP" to "São Paulo", "SE" to "Sergipe", "TO" to "Tocantins",
         )
+        /** Capitais, só com "em" antes: "em Natal" é cidade, "no natal" não. */
+        private val CAPITALS = mapOf(
+            "rio branco" to "AC", "maceio" to "AL", "macapa" to "AP", "manaus" to "AM", "salvador" to "BA", "fortaleza" to "CE",
+            "brasilia" to "DF", "vitoria" to "ES", "goiania" to "GO", "sao luis" to "MA", "cuiaba" to "MT", "campo grande" to "MS",
+            "belo horizonte" to "MG", "belem" to "PA", "joao pessoa" to "PB", "curitiba" to "PR", "recife" to "PE", "teresina" to "PI",
+            "natal" to "RN", "porto alegre" to "RS", "porto velho" to "RO", "boa vista" to "RR", "florianopolis" to "SC",
+            "aracaju" to "SE", "palmas" to "TO",
+        )
         private val SIGLA = Regex("\\b[A-Z]{2}\\b")
 
         /** Nome do estado ("Bahia") ou sigla em maiúsculas ("BA"). "para" e "se" minúsculos são palavras comuns. */
         fun detectUf(query: String): String? {
             SIGLA.findAll(query).map { it.value }.firstOrNull { it in UF_NAMES }?.let { return it }
             val norm = " ${Text.normalize(query)} "
+            CAPITALS.entries.firstOrNull { " em ${it.key} " in norm }?.let { return it.value }
             return UF_NAMES.entries.sortedByDescending { it.value.length }.firstOrNull { (uf, name) ->
                 if (uf == "PA") "pará" in query.lowercase().split(Regex("[^\\p{L}]+"))
                 else " ${Text.normalize(name)} " in norm

@@ -5,5 +5,8 @@
     <string name="overlay_running">2B está na tela</string>
     <string name="overlay_stop">Esconder</string>
     <string name="capture_running">Lendo a tela uma vez</string>
+    <string name="capture_live">A 2B lê a tela quando você a chama</string>
+    <string name="capture_stop">Parar</string>
+    <string name="alert_locked">A 2B tem um aviso novo</string>
     <string name="open_2b">Abrir a 2B</string>
 </resources>

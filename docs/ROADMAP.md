@@ -9,16 +9,25 @@
 - [ ] Verificar o Tor com captura de rede
 - [ ] Revisar os guias com quem entende de direito e segurança digital
 - [ ] Arte e ícone da personagem
-- [ ] Assinatura de release e primeiro APK no GitHub
+- [x] Primeiro APK de teste no GitHub
+- [ ] Assinatura de release
 
 ## 0.2
+- [x] Personalidade ativista hacker e papo do dia a dia
+- [x] Web, leitura de tela e limpeza como opções fixas
+- [x] Notícia, mensagem do dia, atos, checklist e ferramentas do site
+- [x] Avisos por notificação
+- [ ] Testar em celular: avisos com o app fechado e leitura de tela contínua
+- [ ] Avisos na hora (hoje podem atrasar; exigiria um servidor)
+
+## 0.3
 - [ ] Busca por significado (embeddings locais)
 - [ ] OCR local, para ler imagens com modelo só de texto
 - [ ] Animações da personagem
 - [ ] PIN e atalho de pânico
 - [ ] Voz local (ouvir e falar)
 
-## 0.3, Windows
+## 0.4, Windows
 - [ ] Testar a janela flutuante e a captura em vários monitores
 - [ ] Instalador e assinatura
 - [ ] Modelo com placa de vídeo

@@ -34,6 +34,8 @@ class KnowledgeTest {
         assertEquals("guia:conta-invadida", top("hackearam minha conta do instagram"))
         assertEquals("guia:exposicao", top("vazaram meus dados e estou recebendo ameaça"))
         assertEquals("guia:direitos-ato", top("quais meus direitos se a polícia me abordar no protesto"))
+        assertEquals("guia:direitos-ato", top("quais meus direitos num protesto?"))
+        assertEquals("guia:gas-ato", top("e se jogarem gás?"))
         assertEquals("site:facescan", top("o que é o F4C3 SC4N"))
     }
 

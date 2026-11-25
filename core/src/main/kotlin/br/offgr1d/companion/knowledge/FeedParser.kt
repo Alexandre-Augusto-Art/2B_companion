@@ -21,11 +21,11 @@ object FeedParser {
     fun parse(name: String, raw: String): List<Doc> {
         val root = Json.parseToJsonElement(raw)
         return when (name) {
-            "chatbot" -> root.list("entries").mapNotNull(::tool)
+            "chatbot", "extras" -> root.list("entries").mapNotNull(::tool)
             "factchecks" -> root.list("items").mapNotNull(::check)
-            "organize" -> root.list("eventos").mapNotNull(::event)
-            "reflections" -> root.jsonArray.mapNotNull(::reflection)
-            "motivations" -> root.jsonArray.mapNotNull(::quote)
+            "organize" -> acts(raw).map(::event)
+            "reflections" -> reflections(raw).map(::reflection)
+            "motivations" -> quotes(raw).map(::quote)
             "guides" -> root.list("guides").mapNotNull(::guide)
             "factcheck" -> { // configuração do analisador de links: só valida
                 require(root.list("trusted").isNotEmpty()) { "lista de sites vazia" }
@@ -56,43 +56,53 @@ object FeedParser {
         )
     }
 
-    private fun event(e: JsonElement): Doc? {
-        val id = e.str("id") ?: return null
-        val title = e.str("titulo") ?: return null
+    // ---------- conteúdo do dia ----------
+
+    fun acts(raw: String): List<Act> = Json.parseToJsonElement(raw).list("eventos").mapNotNull { e ->
         val fonte = (e as? JsonObject)?.get("fonte")
-        val eventDate = e.str("data")
-        val published = e.str("publicadoEm")?.take(10)
-        val kind = if (e.str("tipo") == "convocacao") "Convocação" else "Notícia sobre ato, não é convocação"
-        val place = listOfNotNull(e.str("cidade"), e.str("uf")).joinToString(" - ")
-        return Doc(
-            id = "ato:$id", kind = DocKind.ATO, title = title,
-            text = "$kind. Local: ${place.ifBlank { "não informado" }}. " +
-                "Data do ato: ${eventDate ?: "não informada, confira na fonte"}. " +
-                "Publicado em ${published ?: "data desconhecida"}.",
-            url = fonte?.https("url"), source = fonte?.str("nome"), date = published, uf = e.str("uf"),
-            keywords = listOf("ato", "manifestacao", "protesto"), eventDate = eventDate,
+        Act(
+            id = e.str("id") ?: return@mapNotNull null, title = e.str("titulo") ?: return@mapNotNull null,
+            call = e.str("tipo") == "convocacao", uf = e.str("uf"), states = e.strings("estados"), city = e.str("cidade"),
+            date = e.str("data"), hour = e.str("hora"), published = e.str("publicadoEm")?.take(10),
+            source = fonte?.str("nome"), url = fonte?.https("url"),
         )
     }
 
-    private fun reflection(e: JsonElement): Doc? {
-        val obj = e as? JsonObject ?: return null
+    fun reflections(raw: String): List<Reflection> = Json.parseToJsonElement(raw).jsonArray.mapNotNull { e ->
+        val obj = e as? JsonObject ?: return@mapNotNull null
         val news = obj["news"]
         val refl = obj["reflection"]
-        return Doc(
-            id = "w4k3:${e.str("id") ?: return null}", kind = DocKind.REFLEXAO,
-            title = refl?.str("title") ?: return null,
-            text = "Notícia que motivou: ${news?.str("title").orEmpty()} (${news?.str("source").orEmpty()}). " +
-                "Reflexão: " + Text.stripHtml(refl.str("content").orEmpty()),
-            url = news?.https("link") ?: (SITE + "w4k3-protocol.html"), source = "W4K3 PR0T0C0L", date = e.str("date"),
-            keywords = listOf("w4k3", "reflexao"),
+        val content = Text.stripHtml(refl?.str("content").orEmpty())
+        Reflection(
+            id = e.str("id") ?: return@mapNotNull null, date = e.str("date"), title = refl?.str("title") ?: return@mapNotNull null,
+            excerpt = Text.stripHtml(refl.str("excerpt") ?: content), content = content,
+            newsTitle = news?.str("title"), newsSource = news?.str("source"), newsLink = news?.https("link"),
         )
-    }
+    }.sortedByDescending { it.date.orEmpty() }
 
-    private fun quote(e: JsonElement): Doc? = Doc(
-        id = "frase:${e.str("date") ?: return null}", kind = DocKind.FRASE, title = "Frase do dia",
-        text = "\"${e.str("content") ?: return null}\" (${e.str("author").orEmpty()})",
-        url = SITE + "motivacao.html", source = "Motivação Diária", date = e.str("date"),
-        keywords = listOf("frase", "motivacao", "inspiracao"),
+    fun quotes(raw: String): List<Quote> = Json.parseToJsonElement(raw).jsonArray.mapNotNull { e ->
+        val date = e.str("date") ?: return@mapNotNull null
+        Quote("$date:${e.str("bankId").orEmpty()}", date, e.str("content") ?: return@mapNotNull null, e.str("author"))
+    }.sortedByDescending { it.date }
+
+    private fun event(a: Act) = Doc(
+        id = "ato:${a.id}", kind = DocKind.ATO, title = a.title,
+        text = "${if (a.call) "Convocação" else "Notícia sobre ato, não é convocação"}. " +
+            "Local: ${listOfNotNull(a.city, a.uf).joinToString(" - ").ifBlank { "não informado" }}. " +
+            "Data do ato: ${a.date ?: "não informada, confira na fonte"}. Publicado em ${a.published ?: "data desconhecida"}.",
+        url = a.url, source = a.source, date = a.published, uf = a.uf,
+        keywords = listOf("ato", "manifestacao", "protesto"), eventDate = a.date,
+    )
+
+    private fun reflection(r: Reflection) = Doc(
+        id = "w4k3:${r.id}", kind = DocKind.REFLEXAO, title = r.title,
+        text = "Notícia que motivou: ${r.newsTitle.orEmpty()} (${r.newsSource.orEmpty()}). Reflexão: ${r.content}",
+        url = r.newsLink ?: (SITE + "w4k3-protocol.html"), source = "W4K3 PR0T0C0L", date = r.date, keywords = listOf("w4k3", "reflexao"),
+    )
+
+    private fun quote(q: Quote) = Doc(
+        id = "frase:${q.date}", kind = DocKind.FRASE, title = "Frase do dia", text = "\"${q.content}\" (${q.author.orEmpty()})",
+        url = SITE + "motivacao.html", source = "Motivação Diária", date = q.date, keywords = listOf("frase", "motivacao", "inspiracao"),
     )
 
     private fun guide(e: JsonElement): Doc? = Doc(

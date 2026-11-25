@@ -11,6 +11,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -43,12 +45,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import br.offgr1d.companion.capture.CaptureActivity
+import br.offgr1d.companion.capture.CaptureService
 import br.offgr1d.companion.chat.Mood
 import br.offgr1d.companion.overlay.OverlayService
+import br.offgr1d.companion.ui.AlertActions
 import br.offgr1d.companion.ui.CompanionApp
 import br.offgr1d.companion.ui.DefaultAvatar
 import br.offgr1d.companion.ui.Palette
 import br.offgr1d.companion.ui.PlatformActions
+import kotlinx.coroutines.launch
 
 /** Arte em assets/avatar/{idle,thinking,talking,alert}.png. Sem arquivo, usa o símbolo provisório. */
 object AvatarArt {
@@ -57,7 +62,8 @@ object AvatarArt {
 }
 
 abstract class BaseActivity : ComponentActivity() {
-    protected val companion get() = (application as App).companion
+    protected val app get() = application as App
+    protected val companion get() = app.companion
     protected var refresh by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,17 +88,25 @@ abstract class BaseActivity : ComponentActivity() {
         }
     }
 
-    protected fun actions(extra: @Composable ColumnScope.() -> Unit = {}) = PlatformActions(
+    protected fun actions(alerts: AlertActions? = null, extra: @Composable ColumnScope.() -> Unit = {}) = PlatformActions(
         openUrl = { url -> if (url.startsWith("https://")) open(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
         captureScreen = ::captureScreen,
+        alerts = alerts,
+        autoScreenNote = "Ao tocar na bolha. O Android pede autorização uma vez e mostra o aviso enquanto estiver ligado; ao bloquear " +
+            "o celular, pode pedir de novo. A imagem fica só na memória e só é usada se você enviar.",
         extraSettings = extra,
         avatar = { mood, m -> Avatar(mood, m) },
     )
 
     /** Sai da frente antes de ler: o que interessa é o app de baixo. */
     private fun captureScreen() {
-        startActivity(Intent(this, CaptureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         if (this is PanelActivity) finish() else moveTaskToBack(true)
+        // Com a sessão aberta não há diálogo: dá tempo de esta janela sumir.
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!CaptureService.grabLive()) {
+                applicationContext.startActivity(Intent(applicationContext, CaptureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        }, if (CaptureService.isLive) 600 else 0)
     }
 
     protected fun open(intent: Intent) {
@@ -112,15 +126,45 @@ abstract class BaseActivity : ComponentActivity() {
 
 class MainActivity : BaseActivity() {
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { startOverlay() }
+    private val askAlerts = registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh++ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val platform = actions { SystemSettings() }
         setContent {
+            val tick = refresh
+            val platform = remember(tick) { actions(alertActions()) { SystemSettings() } }
             SecureWindow()
             Box(Modifier.fillMaxSize().background(Palette.Bg).safeDrawingPadding()) { CompanionApp(companion, platform) }
         }
+        if (savedInstanceState == null) handle(intent)
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
+
+    private fun handle(intent: Intent?) {
+        if (intent?.action == OPEN_CHAT) companion.focusChat()
+    }
+
+    private fun alertActions() = AlertActions(
+        enabled = {
+            Notifications.createAlertChannels(this)
+            if (needsPermission()) askAlerts.launch(Manifest.permission.POST_NOTIFICATIONS)
+            // A primeira consulta só marca o que já existe; avisa do que vier depois.
+            app.scope.launch { runCatching { app.checkAlerts() } }
+        },
+        test = {
+            if (needsPermission()) askAlerts.launch(Manifest.permission.POST_NOTIFICATIONS)
+            else Notifications.alert(this, companion.sampleAlert())
+        },
+        allowed = Notifications.allowed(this),
+        openSettings = { open(Notifications.settingsIntent(this)) },
+    )
+
+    private fun needsPermission() =
+        Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
 
     @Composable
     private fun SystemSettings() {
@@ -136,7 +180,7 @@ class MainActivity : BaseActivity() {
                     OverlayService.running = false
                     refresh++
                 }
-                Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED ->
+                needsPermission() ->
                     askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                 else -> startOverlay()
             }
@@ -146,12 +190,20 @@ class MainActivity : BaseActivity() {
         Text("Toque na bolha para conversar; segure para ler a tela.", color = Palette.Dim)
         Text("Como assistente do Android, a 2B abre pelo botão ou gesto de assistente e recebe a tela sem pedir captura.", color = Palette.Dim)
         TextButton(onClick = { open(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) }) { Text("ESCOLHER ASSISTENTE PADRÃO", color = Palette.Cyan) }
+        Text("Avisos atrasando? Deixe a 2B fora da economia de bateria.", color = Palette.Dim)
+        TextButton(onClick = { open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }) { Text("ECONOMIA DE BATERIA", color = Palette.Cyan) }
     }
 
     private fun startOverlay() {
         startForegroundService(Intent(this, OverlayService::class.java))
         OverlayService.running = true
         refresh++
+    }
+
+    companion object {
+        private const val OPEN_CHAT = "br.offgr1d.companion.OPEN_CHAT"
+
+        fun chatIntent(c: Context): Intent = Intent(c, MainActivity::class.java).setAction(OPEN_CHAT).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 }
 
@@ -174,7 +226,26 @@ class PanelActivity : BaseActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        visible = true
+    }
+
+    override fun onStop() {
+        visible = false
+        super.onStop()
+    }
+
+    override fun onPause() {
+        // Antes de qualquer leitura nova: a próxima abertura da bolha lê a tela do momento.
+        if (isFinishing && companion.state.value.settings.autoScreen) companion.attachScreen(null)
+        super.onPause()
+    }
+
     companion object {
+        var visible = false
+            private set
+
         fun intent(c: Context): Intent =
             Intent(c, PanelActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }

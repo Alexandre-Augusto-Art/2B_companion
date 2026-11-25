@@ -9,6 +9,7 @@ import br.offgr1d.companion.chat.Source
 import br.offgr1d.companion.llm.LlmEngine
 import br.offgr1d.companion.llm.LlmRequest
 import br.offgr1d.companion.llm.ModelCatalog
+import br.offgr1d.companion.llm.ModelSpec
 import br.offgr1d.companion.llm.ModelStore
 import br.offgr1d.companion.llm.NativeText
 import br.offgr1d.companion.llm.Turn
@@ -21,7 +22,6 @@ import br.offgr1d.companion.store.Settings
 import br.offgr1d.companion.web.WebSearch
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
 import java.nio.file.Files
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +48,12 @@ private class XorCipher : BlobCipher {
     override fun destroyKey() { destroyed = true }
 }
 
-fun tempDir(): File = Files.createTempDirectory("2b").toFile().also { it.deleteOnExit() }
+/** Apagada no fim: deleteOnExit não apaga pasta com arquivos dentro. */
+fun tempDir(): File = Files.createTempDirectory("2b").toFile().also { d -> Runtime.getRuntime().addShutdownHook(Thread { d.deleteRecursively() }) }
+
+/** Arquivo de 1 byte. Do tamanho real, ocuparia gigabytes: no Windows setLength reserva o espaço. */
+fun fakeModelIn(models: File, id: String) = File(models, "$id.litertlm").writeBytes(byteArrayOf(0))
+fun fakeReady(models: File): (ModelSpec) -> Boolean = { File(models, "${it.id}.litertlm").exists() }
 fun memoryStore() = BlobStore(tempDir(), XorCipher())
 
 private class FakeEngine(val pieces: List<String>, val stepMs: Long = 0) : LlmEngine {
@@ -70,13 +75,10 @@ class CompanionTest {
 
     @AfterTest fun end() = scope.cancel()
 
-    /** Arquivo esparso do tamanho certo: basta para o app achar que o modelo está pronto. */
-    private fun fakeModel(id: String = "gemma-4-e2b") = ModelCatalog.byId(id).let { m ->
-        RandomAccessFile(File(models, "$id.litertlm"), "rw").use { it.setLength(m.bytes) }
-    }
+    private fun fakeModel(id: String = "gemma-4-e2b") = fakeModelIn(models, id)
 
     private fun app(engine: LlmEngine = FakeEngine(listOf("ok")), idle: Long = 60_000) =
-        Companion2B(scope, BlobStore(data, cipher), models, tempDir(), { engine }, idle).also { runBlocking { it.awaitReady() } }
+        Companion2B(scope, BlobStore(data, cipher), models, tempDir(), { engine }, idle, modelReady = fakeReady(models)).also { runBlocking { it.awaitReady() } }
 
     private fun Companion2B.ask(q: String) = runBlocking { withTimeout(10_000) { send(q)!!.join() } }
     private val Companion2B.last get() = state.value.messages.last()
@@ -94,7 +96,7 @@ class CompanionTest {
         fakeModel()
         val engine = FakeEngine(listOf("Ligue para o ", "banco [1]."))
         val a = app(engine)
-        a.ask("caí num golpe do pix")
+        a.ask("como criar senhas fortes?")
         assertEquals("Ligue para o banco [1].", a.last.text)
         assertEquals(listOf(1), a.last.sources.map { it.n })
         assertTrue("<<<DADOS [1]" in engine.requests.single().user)

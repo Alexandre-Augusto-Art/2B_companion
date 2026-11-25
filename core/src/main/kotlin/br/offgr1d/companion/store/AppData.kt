@@ -1,5 +1,6 @@
 package br.offgr1d.companion.store
 
+import br.offgr1d.companion.alerts.AlertState
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -12,7 +13,20 @@ data class Settings(
     val searxUrl: String = "",
     val saveHistory: Boolean = false,
     val blockScreenshots: Boolean = true,
-)
+    /** Opções que ficam ligadas até a pessoa desligar. */
+    val web: Boolean = false,
+    val autoScreen: Boolean = false,
+    val autoClear: Boolean = false,
+    val alertW4k3: Boolean = false,
+    val alertQuote: Boolean = false,
+    val alertActs: Boolean = false,
+    /** Vazio = todos os estados. */
+    val alertUfs: List<String> = emptyList(),
+    /** Já respondeu se quer avisos. */
+    val alertsAsked: Boolean = false,
+) {
+    val anyAlert get() = alertW4k3 || alertQuote || alertActs
+}
 
 @Serializable
 data class SavedMessage(val fromUser: Boolean, val text: String)
@@ -26,6 +40,9 @@ class AppData(private val store: BlobStore) {
     fun memories(): List<String> = store.read("memories")?.let { json.decodeFromString<List<String>>(it.toString(Charsets.UTF_8)) }.orEmpty()
     fun saveMemories(m: List<String>) =
         if (m.isEmpty()) store.delete("memories") else store.write("memories", json.encodeToString(m).toByteArray())
+
+    fun alerts(): AlertState = store.read("alerts")?.let { json.decodeFromString<AlertState>(it.toString(Charsets.UTF_8)) } ?: AlertState()
+    fun saveAlerts(a: AlertState) = store.write("alerts", json.encodeToString(AlertState.serializer(), a).toByteArray())
 
     fun history(): List<SavedMessage> =
         store.read("history")?.let { json.decodeFromString<List<SavedMessage>>(it.toString(Charsets.UTF_8)) }.orEmpty()

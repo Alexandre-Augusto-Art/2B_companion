@@ -18,6 +18,7 @@ import br.offgr1d.companion.Notifications
 import br.offgr1d.companion.PanelActivity
 import br.offgr1d.companion.R
 import br.offgr1d.companion.capture.CaptureActivity
+import br.offgr1d.companion.capture.CaptureService
 import kotlin.math.hypot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -63,9 +64,15 @@ class OverlayService : Service() {
         }
         val v = AvatarView(this)
         v.contentDescription = getString(R.string.open_2b)
-        v.setOnClickListener { startActivity(PanelActivity.intent(this)) }
+        v.setOnClickListener {
+            val auto = (application as App).companion.state.value.settings.autoScreen
+            when {
+                !auto || PanelActivity.visible -> startActivity(PanelActivity.intent(this))
+                !CaptureService.grabLive() -> askCapture()
+            }
+        }
         v.setOnLongClickListener {
-            startActivity(Intent(this, CaptureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            if (!CaptureService.grabLive()) askCapture()
             true
         }
         val slop = ViewConfiguration.get(this).scaledTouchSlop
@@ -111,6 +118,8 @@ class OverlayService : Service() {
             (application as App).companion.state.map { it.mood }.distinctUntilChanged().collect { v.mood = it }
         }
     }
+
+    private fun askCapture() = startActivity(Intent(this, CaptureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 
     override fun onDestroy() {
         scope.cancel()

@@ -3,22 +3,25 @@
 Companheira de IA do [0FF-GR1D](https://alexandre-augusto-art.github.io/0FF-GR1D_WEB/). Conversa, checa links e boatos,
 orienta sobre segurança digital e manifestações. A IA roda no aparelho.
 
-**Estado: 0.1, em desenvolvimento.** O Android compila, mas ainda não foi testado em celular. O Windows é só a base. A IA foi testada no Windows com
+**Estado: 0.2, em desenvolvimento.** O Android compila, mas ainda não foi testado em celular. O Windows é só a base. A IA foi testada no Windows com
 Qwen3 0.6B e Gemma 4 E2B (texto e imagem).
 
 ## O que faz
 
-- Conversa por cima de outros apps (bolha) ou como assistente do Android.
-- Lê a tela quando você pede. A leitura só é usada se você enviar.
+- Conversa no dia a dia, com personalidade de ativista hacker, por cima de outros apps (bolha) ou como assistente do Android.
+- Traz a notícia do W4K3 PR0T0C0L, a mensagem do dia, os próximos atos por estado, o que levar a um protesto e as ferramentas do site.
+- Avisa quando sai novidade, com notificação comum do Android e mensagem na conversa. Sem servidor: o app consulta o site.
+- Lê a tela quando você pede ou, se você ligar, sempre que tocar na bolha. A leitura só é usada se você enviar.
 - Analisa links sem abri-los, com as mesmas regras do Fact Check do site.
 - Responde com o conteúdo do 0FF-GR1D e guias embutidos, mostrando as fontes.
-- Busca na web só quando você liga, pergunta por pergunta.
+- Busca na web só se você ligar. Fica ligada até você desligar e aparece no topo da conversa.
+- Em urgências (golpe, conta invadida, prisão, gás) e direitos, mostra o guia conferido em vez da IA.
 - Funciona sem modelo (guias e links) e offline depois de baixar um.
 - Memória que você controla, inspetor do que a IA viu e do que saiu do aparelho, e botão de pânico.
 
 ## O que não faz
 
-Não clica nem digita por você, não vigia a tela, não ouve o microfone, não abre links recebidos e não tem telemetria própria.
+Não clica nem digita por você, não grava a tela, não ouve o microfone, não abre links recebidos e não tem telemetria própria.
 
 ## Compilar
 

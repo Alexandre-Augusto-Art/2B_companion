@@ -85,6 +85,7 @@ fun main() = application {
         PlatformActions(
             openUrl = { url -> if (url.startsWith("https://")) runCatching { Desktop.getDesktop().browse(URI(url)) } },
             captureScreen = { capturing = true },
+            autoScreenNote = "Ao abrir a conversa pelo símbolo da 2B. Fica só na memória e só é usada se você enviar.",
             avatar = { mood, m ->
                 val image = art[mood] ?: art[Mood.IDLE]
                 if (image != null) Image(image, "2B", m) else DefaultAvatar(mood, m)
@@ -108,13 +109,19 @@ fun main() = application {
         state = rememberWindowState(size = DpSize(88.dp, 88.dp), position = WindowPosition(Alignment.BottomEnd)),
     ) {
         window.background = Color(0, 0, 0, 0)
-        WindowDraggableArea(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { chatOpen = !chatOpen } }) {
+        WindowDraggableArea(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures {
+            when {
+                chatOpen -> { chatOpen = false; companion.attachScreen(null); companion.onHidden() }
+                companion.state.value.settings.autoScreen -> { companion.onVisible(); capturing = true }
+                else -> { companion.onVisible(); chatOpen = true }
+            }
+        } }) {
             Box(Modifier.fillMaxSize(), Alignment.Center) { platform.avatar(state.mood, Modifier.fillMaxSize()) }
         }
     }
 
     if (chatOpen) Window(
-        onCloseRequest = { chatOpen = false }, title = "2B Companion", visible = !capturing,
+        onCloseRequest = { chatOpen = false; companion.attachScreen(null); companion.onHidden() }, title = "2B Companion", visible = !capturing,
         state = rememberWindowState(size = DpSize(460.dp, 720.dp)),
     ) {
         CompanionApp(companion, platform)

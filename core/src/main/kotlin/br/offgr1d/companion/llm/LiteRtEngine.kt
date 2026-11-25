@@ -54,7 +54,7 @@ class LiteRtEngine(private val threads: Int? = null) : LlmEngine {
         val conversation = e.createConversation(ConversationConfig(
             systemInstruction = Contents.of(NativeText.safe(request.system)),
             initialMessages = request.history.map { if (it.fromUser) Message.user(NativeText.safe(it.text)) else Message.model(NativeText.safe(it.text)) },
-            samplerConfig = SamplerConfig(topK = 40, topP = 0.9, temperature = 0.6),
+            samplerConfig = SamplerConfig(topK = 40, topP = 0.9, temperature = request.temperature),
             automaticToolCalling = false,
             maxOutputToken = request.maxTokens,
             thinkingConfig = ThinkingConfig(enableThinking = false),

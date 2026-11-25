@@ -11,6 +11,7 @@ class LlmRequest(
     val user: String,
     val image: ByteArray? = null,
     val maxTokens: Int = 700,
+    val temperature: Double = 0.6,
 )
 
 /**
