@@ -18,6 +18,23 @@ class DesktopTest {
     private val windows = System.getProperty("os.name").startsWith("Windows")
     private val dir = tempDir("2b-desktop")
 
+    /** Só falha no celular, em tempo de execução: o compilador e o lint não pegam. */
+    @Test fun `manifesto do Android tem as permissões que o código exige`() {
+        val android = File("../androidApp/src/main")
+        val manifest = File(android, "AndroidManifest.xml").readText()
+        val code = android.walk().filter { it.extension == "kt" }.joinToString("\n") { it.readText() }
+        mapOf(
+            "setRequiredNetworkType" to listOf("INTERNET", "ACCESS_NETWORK_STATE"),
+            "setPersisted(true)" to listOf("RECEIVE_BOOT_COMPLETED"),
+            "FOREGROUND_SERVICE_TYPE_SPECIAL_USE" to listOf("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_SPECIAL_USE"),
+            "FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION" to listOf("FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PROJECTION"),
+            "TYPE_APPLICATION_OVERLAY" to listOf("SYSTEM_ALERT_WINDOW"),
+        ).forEach { (use, needed) ->
+            assertTrue(use in code, "o código não usa mais $use: atualize o teste")
+            needed.forEach { assertTrue("\"android.permission.$it\"" in manifest, "$use exige $it") }
+        }
+    }
+
     /** Opcional, LIVE=1: consulta o site de verdade. */
     @Test fun `site no ar alimenta atalhos e avisos`() {
         if (System.getenv("LIVE") != "1") return

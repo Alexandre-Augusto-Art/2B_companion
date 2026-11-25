@@ -12,6 +12,7 @@ import br.offgr1d.companion.llm.LiteRtEngine
 import br.offgr1d.companion.store.BlobStore
 import br.offgr1d.companion.store.KeystoreCipher
 import java.io.File
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,7 +21,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class App : Application(), Application.ActivityLifecycleCallbacks {
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** Falha em segundo plano vira aviso na conversa: não pode fechar o app, muito menos a cada abertura. */
+    private val onFailure = CoroutineExceptionHandler { _, e ->
+        runCatching { companion.notice("Algo falhou no app: ${e.message ?: e.javaClass.simpleName}") }
+    }
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + onFailure)
     private var visible = 0
 
     val companion: Companion2B by lazy {
@@ -40,7 +45,8 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
             companion.awaitReady() // antes disso os ajustes ainda são os padrões
             launch {
                 companion.state.map { it.settings.anyAlert }.distinctUntilChanged().collect { on ->
-                    AlertJob.schedule(this@App, on)
+                    runCatching { AlertJob.schedule(this@App, on) }
+                        .onFailure { companion.notice("Não consegui agendar os avisos: ${it.message ?: it.javaClass.simpleName}") }
                     if (!on) Notifications.cancelAlerts(this@App)
                 }
             }
