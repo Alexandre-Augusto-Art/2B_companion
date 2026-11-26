@@ -22,6 +22,7 @@ import br.offgr1d.companion.llm.Turn
 import br.offgr1d.companion.net.NetEvent
 import br.offgr1d.companion.net.NetLog
 import br.offgr1d.companion.net.SafeHttp
+import br.offgr1d.companion.screen.Attachment
 import br.offgr1d.companion.screen.ScreenContext
 import br.offgr1d.companion.store.AppData
 import br.offgr1d.companion.store.BlobStore
@@ -30,6 +31,7 @@ import br.offgr1d.companion.store.Settings
 import br.offgr1d.companion.text.Text
 import br.offgr1d.companion.web.WebSearch
 import java.io.File
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +39,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,6 +66,8 @@ data class ChatMessage(
     /** Escrito pela IA: a interface avisa que pode errar. */
     val generated: Boolean = false,
     val interrupted: Boolean = false,
+    /** Foto ou vídeo, de quem mandou. */
+    val media: Media? = null,
 )
 
 /** O que a 2B viu na última pergunta, para o Inspetor. */
@@ -157,7 +162,10 @@ class Companion2B(
     // ---------- conversa ----------
 
     fun attachScreen(s: ScreenContext?) = _state.update {
-        if (s != null && s.isEmpty) it.copy(screen = null, notice = "Não consegui ler esta tela. O app pode bloquear capturas.")
+        if (s != null && s.isEmpty) it.copy(
+            screen = null,
+            notice = if (s.kind == Attachment.SCREEN) "Não consegui ler esta tela. O app pode bloquear capturas." else "Não consegui abrir esse arquivo.",
+        )
         else it.copy(screen = s, screenUsed = false)
     }
 
@@ -167,8 +175,15 @@ class Companion2B(
     fun notice(text: String) = _state.update { it.copy(notice = text) }
 
     fun send(text: String): Job? {
-        val question = text.trim()
         val s = _state.value
+        val picked = s.screen?.takeIf { it.kind != Attachment.SCREEN }
+        val question = text.trim().ifEmpty {
+            when (picked?.kind) {
+                Attachment.PHOTO -> "O que você acha dessa foto?"
+                Attachment.VIDEO -> "O que você acha desse vídeo?"
+                else -> ""
+            }
+        }
         if (question.isEmpty() || s.busy) return null
         if (AIGF_COMMAND.matches(question.lowercase())) return toggleAigf(question)
         val history = historyOf(s.messages.drop(1))
@@ -178,21 +193,24 @@ class Companion2B(
         // Leitura manual vale para uma pergunta. Automática: a primeira sobre a tela e as que falarem dela de novo.
         val auto = s.settings.autoScreen
         val aboutScreen = SCREEN_WORDS.containsMatchIn(Text.normalize(question))
-        val screen = s.screen?.takeIf { tool == null && (!auto || aboutScreen || (!s.screenUsed && !casual)) }
+        val screen = s.screen?.takeIf { tool == null && (picked != null || !auto || aboutScreen || (!s.screenUsed && !casual)) }
         // Avisos mostrados depois da última pergunta: a pessoa pode estar respondendo a eles.
         val alerts = s.messages.takeLastWhile { !it.fromUser }.mapNotNull { it.alert }.map { "${it.title}\n${it.text}" } +
             listOfNotNull(s.daily.reflections.firstOrNull()?.takeIf { lastTool == Tool.NEWS }?.let { "OPINIÃO do W4K3 PR0T0C0L: ${it.title}\n${it.content}" })
         _state.update {
             it.copy(
-                messages = it.messages + ChatMessage(true, question, withScreen = screen != null),
+                messages = it.messages + ChatMessage(
+                    true, question, withScreen = screen != null, media = screen?.takeIf { p -> p === picked }?.let { p -> Media(p.kind, p.image) },
+                ),
                 busy = true, status = "lendo", mood = Mood.THINKING, notice = null,
-                screen = if (auto || screen == null) it.screen else null, screenUsed = it.screenUsed || screen != null,
+                screen = if ((auto && picked == null) || screen == null) it.screen else null,
+                screenUsed = if (picked != null) it.screenUsed else it.screenUsed || screen != null,
             )
         }
         return scope.launch {
             try {
                 if (tool != null && !Crisis.detect(question)) useTool(tool, question)
-                else answer(question, history, screen, s.settings.web, casual, alerts)
+                else answer(question, history, screen, s.settings.web, casual, alerts, onlyMedia = text.isBlank() && screen === picked && picked != null)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -227,7 +245,13 @@ class Companion2B(
         }
         val s = _state.value
         val a = Toolbox.answer(tool, question, kb.daily, kb.index.docs, s.settings.alertUfs, todayBR(), stale)
-        _state.update { it.copy(messages = it.messages + ChatMessage(false, a.text, a.sources, tool = tool), mood = Mood.IDLE) }
+        val video = if (tool == Tool.NEWS) kb.daily.reflections.firstOrNull()?.takeIf { it.video != null } else null
+        _state.update {
+            it.copy(
+                messages = it.messages + ChatMessage(false, a.text, a.sources, tool = tool, media = video?.let { r -> Media(Attachment.VIDEO, url = r.video, posterUrl = r.poster) }),
+                mood = Mood.IDLE,
+            )
+        }
     }
 
     /** Toque num atalho do 0FF-GR1D. */
@@ -237,7 +261,10 @@ class Companion2B(
         it.copy(docs = kb.index.docs.size, daily = kb.daily, pages = Toolbox.pages(kb.index.docs), net = netLog.events)
     }
 
-    private suspend fun answer(question: String, history: List<Turn>, screen: ScreenContext?, useWeb: Boolean, casual: Boolean, alerts: List<String>) {
+    /** @param onlyMedia foto ou vídeo sem texto: a pergunta padrão não vira busca. */
+    private suspend fun answer(
+        question: String, history: List<Turn>, screen: ScreenContext?, useWeb: Boolean, casual: Boolean, alerts: List<String>, onlyMedia: Boolean = false,
+    ) {
         REMEMBER.matchEntire(question)?.let { m ->
             val fact = m.groupValues[1].trim().trimEnd('.')
             addMemory(fact)
@@ -249,9 +276,9 @@ class Companion2B(
 
         val links = kb.links.analyzeAll(question + "\n" + screen?.text.orEmpty())
         val chat = casual && screen == null && links.isEmpty()
-        val hits = if (chat) emptyList() else kb.index.search(question)
+        val hits = if (chat || onlyMedia) emptyList() else kb.index.search(question)
         var webFailed: String? = null
-        val results = if (!useWeb || crisis || chat) emptyList() else {
+        val results = if (!useWeb || crisis || chat || onlyMedia) emptyList() else {
             _state.update { it.copy(status = "buscando na web") }
             runCatching { withContext(Dispatchers.IO) { web.search(question, _state.value.settings.searxUrl) } }
                 .getOrElse { webFailed = it.message; emptyList() }
@@ -268,6 +295,10 @@ class Companion2B(
         }
         // Modelo fraco não orienta sobre segurança, direitos ou links: vale o texto conferido.
         val fixedText = !spec.advises && screen == null && (links.isNotEmpty() || hits.firstOrNull()?.doc?.kind == DocKind.GUIA)
+        if (onlyMedia && (!hasModel || !spec.vision)) {
+            _state.update { it.copy(trace = it.trace?.copy(usedModel = false)) }
+            return addAnswer("Para eu ver fotos e vídeos, preciso de um modelo com visão: baixe o Gemma 4 E2B em Modelos.", Mood.IDLE)
+        }
         if (!hasModel || fixedText) {
             _state.update { it.copy(trace = it.trace?.copy(usedModel = false)) }
             SmallTalk.withoutModel(question)?.takeIf { chat && !hasModel }?.let { return addAnswer(it, Mood.IDLE) }
@@ -276,7 +307,7 @@ class Companion2B(
             return
         }
         if (screen?.image != null && !spec.vision && screen.text.isNullOrBlank()) {
-            notice("${spec.name} não entende imagens. Use um modelo com visão para ler esta tela.")
+            notice("${spec.name} não entende imagens. Use um modelo com visão para ver ${if (screen.kind == Attachment.SCREEN) "esta tela" else "fotos e vídeos"}.")
         }
         val q = Text.normalize(question)
         val urgent = if (chat) null else kb.index.search(question, limit = 12).firstOrNull { URGENT[it.doc.id]?.containsMatchIn(q) == true }?.doc
@@ -513,7 +544,87 @@ class Companion2B(
 
     private fun alertMessage(a: Alert) = ChatMessage(
         false, "${a.voice}\n\n${a.title}\n${a.text}", listOf(Source(1, "Abrir no 0FF-GR1D", a.feed.label, a.url)), alert = a,
+        media = a.video?.let { Media(Attachment.VIDEO, url = it, posterUrl = a.poster) },
     )
+
+    // ---------- fotos e vídeos do site ----------
+
+    private val pictures = object : LinkedHashMap<String, ByteArray>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?) = size > 12
+    }
+    private val mediaLock = Mutex()
+    private fun mediaDir() = File(cacheDir, "media")
+
+    private fun fromSite(url: String) {
+        if (!url.startsWith(FeedParser.SITE) || ".." in url) throw IllegalArgumentException("só arquivos do site do 0FF-GR1D")
+    }
+
+    /** Capa de vídeo ou imagem do site. Fica só na memória. */
+    suspend fun picture(url: String): ByteArray = withContext(Dispatchers.IO) {
+        fromSite(url)
+        synchronized(pictures) { pictures[url] }?.let { return@withContext it }
+        val bytes = try {
+            http.open(url, "baixar imagem do 0FF-GR1D").use { r -> readAtMost(r.stream, MAX_PICTURE) }
+        } finally {
+            syncNet()
+        }
+        synchronized(pictures) { pictures[url] = bytes }
+        bytes
+    }
+
+    /** Já está no aparelho? */
+    fun cachedVideo(url: String): File? = videoFile(url).takeIf { it.isFile && it.length() > 0 }
+
+    /**
+     * Baixa o vídeo do site uma vez e guarda no cache do app (some no pânico). Passa pelo Tor se estiver ligado.
+     * Ficam só os últimos [KEEP_VIDEOS].
+     */
+    suspend fun video(url: String): File = withContext(Dispatchers.IO) {
+        fromSite(url)
+        mediaLock.withLock {
+            cachedVideo(url)?.let { return@withLock it }
+            val target = videoFile(url)
+            target.parentFile.mkdirs()
+            val part = File(target.path + ".part")
+            try {
+                http.open(url, "baixar vídeo do W4K3").use { r ->
+                    if (r.length > MAX_VIDEO) throw java.io.IOException("vídeo grande demais")
+                    part.outputStream().use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        var done = 0L
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            val n = r.stream.read(buf)
+                            if (n < 0) break
+                            done += n
+                            if (done > MAX_VIDEO) throw java.io.IOException("vídeo grande demais")
+                            out.write(buf, 0, n)
+                        }
+                    }
+                }
+                if (!part.renameTo(target)) throw java.io.IOException("não deu para guardar o vídeo")
+            } finally {
+                part.delete()
+                syncNet()
+            }
+            mediaDir().listFiles { f -> f.name.endsWith(".mp4") }?.sortedByDescending { it.lastModified() }?.drop(KEEP_VIDEOS)?.forEach { it.delete() }
+            target
+        }
+    }
+
+    private fun videoFile(url: String) = File(mediaDir(), url.substringAfter(FeedParser.SITE).replace(Regex("[^A-Za-z0-9._-]"), "_").take(120))
+
+    private fun readAtMost(input: java.io.InputStream, max: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(16 * 1024)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            if (out.size() + n > max) throw java.io.IOException("imagem grande demais")
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
 
     /**
      * Procura novidades dos assuntos ligados. Cada uma vira mensagem da 2B; quem chama mostra a notificação.
@@ -603,6 +714,8 @@ class Companion2B(
                 engineLock.withLock { closeEngine() }
                 if (includeModels) all = models.deleteAll() && all
                 all = File(cacheDir, "llm").let { !it.exists() || it.deleteRecursively() } && all
+                all = mediaDir().let { !it.exists() || it.deleteRecursively() } && all
+                synchronized(pictures) { pictures.clear() }
                 netLog.clear()
                 kb.load()
                 all
@@ -632,6 +745,9 @@ class Companion2B(
             "guia:gas-ato" to Regex("(^| )(gas|gases|lacrimo|spray|bomba)( |$)"),
         )
         private const val FRESH_MS = 10 * 60_000L
+        private const val MAX_PICTURE = 3 * 1024 * 1024
+        private const val MAX_VIDEO = 60L * 1024 * 1024
+        private const val KEEP_VIDEOS = 5
         private val CITATION = Regex("\\[(\\d{1,2})]")
     }
 }

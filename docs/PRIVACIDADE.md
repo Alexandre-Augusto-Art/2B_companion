@@ -6,17 +6,18 @@
 |---|---|---|
 | Você toca em ATUALIZAR ou pede notícia, mensagem ou atos | pedido dos arquivos públicos do site | GitHub Pages |
 | Avisos ligados, cerca de uma vez por hora | pedido dos mesmos arquivos; os estados que você escolheu não vão | GitHub Pages |
+| Aviso do W4K3 chega, ou você toca em ASSISTIR | a capa e o vídeo do dia; o vídeo não baixa sozinho em dados móveis | GitHub Pages |
 | Você baixa um modelo | pedido do arquivo | Hugging Face |
 | WEB ligada, a cada pergunta (menos papo e atalhos do site) | só o texto da pergunta | Wikipédia ou o seu SearXNG |
 | Você toca numa fonte | o link abre no navegador | o site da fonte |
 
-Tela, memórias e histórico nunca entram na busca. O que o app pediu à rede aparece no Inspetor. Sem Tor, esses serviços
+Tela, fotos, vídeos, memórias e histórico nunca entram na busca. O seletor do Android entrega só o arquivo escolhido, sem acesso à galeria. O que o app pediu à rede aparece no Inspetor. Sem Tor, esses serviços
 veem seu IP.
 
 ## O que fica guardado
 
 Ajustes, memórias, cópia do conteúdo do site, os últimos 20 avisos e, se você ligar, conversas. Cifrados com AES-256-GCM: chave no Keystore
-(Android) ou protegida pela conta do Windows. Capturas ficam só na memória. Backup do sistema desligado no Android.
+(Android) ou protegida pela conta do Windows. Capturas, fotos e vídeos que você manda ficam só na memória: a conversa guardada leva só o texto. Os últimos 5 vídeos do W4K3 ficam no cache do app e somem no pânico. Backup do sistema desligado no Android.
 
 ## Limites, sem promessa
 

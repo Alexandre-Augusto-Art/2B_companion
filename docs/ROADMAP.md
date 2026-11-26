@@ -31,7 +31,14 @@
 - [ ] PIN e atalho de pânico
 - [ ] Voz local (ouvir e falar)
 
-## 0.4, Windows
+## 0.4
+- [x] Vídeo do W4K3 no aviso, na conversa e na aba HOJE
+- [x] Fotos e vídeos na conversa (vídeo: 4 quadros, sem som)
+- [x] Aviso de atos só do seu estado, com data e presencial
+- [ ] Vídeos no Windows (precisa de um decodificador)
+- [ ] Testar em celular
+
+## 0.5, Windows
 - [ ] Testar a janela flutuante e a captura em vários monitores
 - [ ] Instalador e assinatura
 - [ ] Modelo com placa de vídeo

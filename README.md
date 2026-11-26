@@ -3,15 +3,17 @@
 Companheira de IA do [0FF-GR1D](https://alexandre-augusto-art.github.io/0FF-GR1D_WEB/). Conversa, checa links e boatos,
 orienta sobre segurança digital e manifestações. A IA roda no aparelho.
 
-**Estado: 0.3, em desenvolvimento.** O Android compila, mas ainda não foi testado em celular. No Windows, a versão de teste abre e conversa. A IA foi testada no Windows com
+**Estado: 0.4, em desenvolvimento.** O Android compila, mas ainda não foi testado em celular. No Windows, a versão de teste abre e conversa. A IA foi testada no Windows com
 Qwen3 0.6B e Gemma 4 E2B (texto e imagem).
 
 ## O que faz
 
 - Tem rosto e história: pisca, mexe a boca ao responder e fica vermelha em alerta. Veja [a personagem](docs/PERSONAGEM.md).
 - Conversa no dia a dia, com personalidade de ativista hacker, por cima de outros apps (bolha) ou como assistente do Android.
-- Traz a notícia do W4K3 PR0T0C0L, a mensagem do dia, os próximos atos por estado, o que levar a um protesto e as ferramentas do site.
+- Traz a notícia do W4K3 PR0T0C0L com o vídeo do dia, a mensagem do dia, os próximos atos por estado, o que levar a um protesto e as ferramentas do site.
 - Avisa quando sai novidade, com notificação comum do Android e mensagem na conversa. Sem servidor: o app consulta o site.
+  O aviso do W4K3 traz a capa e o vídeo. O de atos traz só convocações com data, no seu estado, que dá para ir pessoalmente.
+- Recebe fotos e vídeos: a 2B vê a foto, ou 4 quadros do vídeo, sem som. No Windows, só fotos por enquanto.
 - Lê a tela quando você pede ou, se você ligar, sempre que tocar na bolha. A leitura só é usada se você enviar.
 - Analisa links sem abri-los, com as mesmas regras do Fact Check do site.
 - Responde com o conteúdo do 0FF-GR1D e guias embutidos, mostrando as fontes.

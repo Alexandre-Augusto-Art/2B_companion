@@ -34,6 +34,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.AfterTest
 import kotlin.test.Test
+import kotlin.test.assertFails
+import br.offgr1d.companion.screen.Attachment
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -60,8 +62,8 @@ class DailyTest {
 
     @AfterTest fun end() = scope.cancel()
 
-    private fun act(id: String, uf: String, date: String? = null, call: Boolean = true, extra: String = "") =
-        """{"id":"$id","titulo":"Ato $id","tipo":"${if (call) "convocacao" else "cobertura"}","uf":"$uf","publicadoEm":"2026-11-20T10:00:00Z",
+    private fun act(id: String, uf: String, date: String? = null, call: Boolean = true, extra: String = "", title: String = "Ato $id") =
+        """{"id":"$id","titulo":"$title","tipo":"${if (call) "convocacao" else "cobertura"}","uf":"$uf","publicadoEm":"2026-11-20T10:00:00Z",
            "fonte":{"nome":"Jornal","url":"https://exemplo.org/$id"}${date?.let { ",\"data\":\"$it\"" }.orEmpty()}$extra}"""
 
     private fun organize(vararg acts: String) = """{"eventos":[${acts.joinToString()}]}"""
@@ -278,7 +280,7 @@ class DailyTest {
 
     // ---------- avisos ----------
 
-    private val all = Settings(alertW4k3 = true, alertQuote = true, alertActs = true)
+    private val all = Settings(alertW4k3 = true, alertQuote = true, alertActs = true, alertUfs = listOf("BA", "SP"))
     private val feeds = AlertFeed.entries.map { it.feed }.toSet()
 
     @Test fun `primeira leitura só marca, depois avisa uma vez`() {
@@ -298,18 +300,83 @@ class DailyTest {
     }
 
     @Test fun `avisos seguem assunto, estado e falha de rede`() {
-        val d1 = daily(organize(act("a", "BA")), reflections("2026-11-23"), quotes("2026-11-23"))
+        val d1 = daily(organize(act("a", "BA", "2026-11-28")), reflections("2026-11-23"), quotes("2026-11-23"))
         val s1 = Alerts.collect(AlertState(), d1, all, feeds, today).first
-        val d2 = daily(organize(act("a", "BA"), act("b", "SP"), act("n", "BR")), reflections("2026-11-24", "2026-11-23"), quotes("2026-11-24", "2026-11-23"))
+        val d2 = daily(
+            organize(act("a", "BA", "2026-11-28"), act("b", "SP", "2026-11-29"), act("v", "BA", "2026-11-30"), act("n", "BR", "2026-11-30")),
+            reflections("2026-11-24", "2026-11-23"), quotes("2026-11-24", "2026-11-23"),
+        )
         assertEquals(listOf(AlertFeed.QUOTE), Alerts.collect(s1, d2, all.copy(alertW4k3 = false, alertActs = false), feeds, today).second.map { it.feed })
         val onlyBa = Alerts.collect(s1, d2, all.copy(alertUfs = listOf("BA")), feeds, today).second.single { it.feed == AlertFeed.ACTS }
-        assertTrue("Ato n" in onlyBa.text && "Ato b" !in onlyBa.text)
+        assertTrue("Ato v" in onlyBa.text && "Ato b" !in onlyBa.text && "Ato n" !in onlyBa.text, onlyBa.text)
         val (partial, f) = Alerts.collect(s1, d2, all, setOf("motivations"), today)
         assertEquals(1, f.size)
         assertEquals(2, Alerts.collect(partial, d2, all, feeds, today).second.size, "o que falhou avisa depois")
         // Desligar e religar não despeja o que saiu no meio.
         val off = Alerts.collect(s1, d1, all.copy(alertW4k3 = false), feeds, today).first
         assertTrue(Alerts.collect(off, d2, all, feeds, today).second.none { it.feed == AlertFeed.W4K3 })
+    }
+
+    @Test fun `aviso de ato só do estado escolhido e para ir presencialmente`() {
+        val first = daily(organize(act("velho", "BA", "2026-11-25")))
+        val s1 = Alerts.collect(AlertState(), first, all, feeds, today).first
+        val d = daily(organize(
+            act("velho", "BA", "2026-11-25"), act("vai", "BA", "2026-11-26"), act("hoje", "BA", "2026-11-24"),
+            act("nacional", "BR", "2026-11-26"), act("nacionalba", "BR", "2026-11-26", extra = ",\"estados\":[\"BA\"]"),
+            act("semdata", "BA"), act("passou", "BA", "2026-11-20"), act("noticia", "BA", "2026-11-26", call = false),
+            act("online", "BA", "2026-11-26", title = "Plenária online contra a escala 6x1"), act("live", "BA", "2026-11-27", title = "Live do movimento"),
+            act("sp", "SP", "2026-11-26"),
+        ))
+        val onlyBa = all.copy(alertUfs = listOf("BA"), alertW4k3 = false, alertQuote = false)
+        val text = Alerts.collect(s1, d, onlyBa, feeds, today).second.single().text
+        assertTrue("Ato vai" in text && "Ato hoje" in text, text)
+        listOf("nacional", "semdata", "passou", "noticia", "online", "Live", "Ato sp", "velho").forEach { assertTrue(it !in text, "$it em: $text") }
+        assertTrue(Alerts.collect(s1, d, onlyBa.copy(alertUfs = emptyList()), feeds, today).second.isEmpty(), "sem estado, nenhum aviso de ato")
+        assertEquals(listOf("hoje", "velho", "vai"), d.attendable(listOf("BA"), today).map { it.id })
+    }
+
+    @Test fun `W4K3 traz o vídeo do dia, só do próprio site`() {
+        val r = """[{"id":"2026-11-24","date":"2026-11-24","reflection":{"title":"T","content":"C"},
+            "video":{"src":"assets/videos/w4k3/2026-11-24.mp4","poster":"assets/videos/w4k3/2026-11-24.jpg"}},
+            {"id":"2026-11-23","date":"2026-11-23","reflection":{"title":"T2","content":"C"},"video":{"src":"https://mal.org/x.mp4","poster":"../x.jpg"}}]"""
+        val (today, old) = FeedParser.reflections(r)
+        assertEquals(FeedParser.SITE + "assets/videos/w4k3/2026-11-24.mp4", today.video)
+        assertEquals(FeedParser.SITE + "assets/videos/w4k3/2026-11-24.jpg", Alerts.reflection(today).poster)
+        assertEquals(today.video, Alerts.reflection(today).video)
+        assertEquals(null, old.video)
+        assertEquals(null, old.poster)
+        assertEquals(null, FeedParser.siteFile("//mal.org/x"))
+    }
+
+    @Test fun `mensagem do W4K3 na conversa vem com o vídeo e o vídeo só vem do site`() {
+        site["reflections"] = """[{"id":"2026-11-24","date":"2026-11-24","news":{"title":"N","source":"F"},"reflection":{"title":"T","content":"C"},
+            "video":{"src":"assets/videos/w4k3/2026-11-24.mp4","poster":"assets/videos/w4k3/2026-11-24.jpg"}}]"""
+        val a = app()
+        runBlocking { a.updateContent().join() }
+        a.use(Tool.NEWS)!!.let { runBlocking { withTimeout(10_000) { it.join() } } }
+        assertEquals(FeedParser.SITE + "assets/videos/w4k3/2026-11-24.mp4", a.last.media?.url)
+        assertEquals(Attachment.VIDEO, a.last.media?.kind)
+        assertFails { runBlocking { a.video("https://mal.org/x.mp4") } }
+        assertFails { runBlocking { a.picture(FeedParser.SITE + "../x.jpg") } }
+    }
+
+    @Test fun `foto e vídeo vão uma vez, mesmo sem texto`() {
+        fakeModel()
+        val e = Recorder()
+        val a = app(e)
+        a.attachScreen(ScreenContext(null, byteArrayOf(1, 2, 3), Attachment.PHOTO))
+        a.ask("")
+        assertEquals("O que você acha dessa foto?", a.state.value.messages.last { it.fromUser }.text)
+        assertEquals(Attachment.PHOTO, a.state.value.messages.last { it.fromUser }.media?.kind)
+        assertTrue(e.requests[0].image != null && "foto que te mandaram" in e.requests[0].user && "<<<DADOS" !in e.requests[0].user, e.requests[0].user)
+        assertEquals(null, a.state.value.screen, "a foto vale uma pergunta")
+        a.ask("e agora?")
+        assertEquals(null, e.requests[1].image)
+        a.saveSettings(a.state.value.settings.copy(autoScreen = true))
+        a.attachScreen(ScreenContext(null, byteArrayOf(4), Attachment.VIDEO))
+        a.ask("oi, tudo bem?")
+        assertTrue("4 quadros" in e.requests[2].user, "com leitura automática, o vídeo escolhido vai mesmo em papo")
+        assertEquals(null, a.state.value.screen)
     }
 
     @Test fun `muitos atos viram um aviso só`() {

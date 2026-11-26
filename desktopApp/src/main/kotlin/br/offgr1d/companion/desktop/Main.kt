@@ -23,12 +23,15 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import br.offgr1d.companion.chat.Companion2B
 import br.offgr1d.companion.llm.LiteRtEngine
+import br.offgr1d.companion.screen.Attachment
 import br.offgr1d.companion.screen.ScreenContext
 import br.offgr1d.companion.store.BlobStore
 import br.offgr1d.companion.ui.CompanionApp
 import br.offgr1d.companion.ui.PlatformActions
 import java.awt.Color
 import java.awt.Desktop
+import java.awt.FileDialog
+import java.awt.Frame
 import java.awt.GraphicsEnvironment
 import java.awt.Image as AwtImage
 import java.awt.MouseInfo
@@ -58,16 +61,41 @@ fun createCompanion(root: File = dataRoot()): Companion2B = Companion2B(
 /** Captura o monitor onde está o mouse. Fica só na memória. */
 fun captureScreen(): ByteArray {
     val device = MouseInfo.getPointerInfo()?.device ?: GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice
-    val shot = Robot(device).createScreenCapture(device.defaultConfiguration.bounds)
+    return toJpeg(Robot(device).createScreenCapture(device.defaultConfiguration.bounds))
+}
+
+/** Reduz para no máximo 1024 px e grava em JPEG, sem transparência. */
+fun toJpeg(shot: BufferedImage): ByteArray {
     val scale = minOf(1.0, 1024.0 / maxOf(shot.width, shot.height))
     val w = (shot.width * scale).toInt()
     val h = (shot.height * scale).toInt()
     val small = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
     small.createGraphics().apply {
+        color = Color.BLACK
+        fillRect(0, 0, w, h)
         drawImage(shot.getScaledInstance(w, h, AwtImage.SCALE_SMOOTH), 0, 0, null)
         dispose()
     }
     return ByteArrayOutputStream().also { ImageIO.write(small, "jpg", it) }.toByteArray()
+}
+
+private val PHOTO_TYPES = setOf("jpg", "jpeg", "png", "bmp", "gif")
+private val VIDEO_TYPES = setOf("mp4", "mov", "avi", "mkv", "webm", "m4v", "3gp")
+
+/** Escolhe uma foto. No Windows a 2B ainda não abre vídeos: precisaria de um decodificador a mais. */
+fun pickPhoto(companion: Companion2B) {
+    val dialog = FileDialog(null as Frame?, "Foto para a 2B", FileDialog.LOAD).apply {
+        setFilenameFilter { _, name -> name.substringAfterLast('.').lowercase() in PHOTO_TYPES }
+        file = "*.jpg;*.jpeg;*.png;*.bmp;*.gif"
+        isVisible = true
+    }
+    val name = dialog.file ?: return
+    val f = File(dialog.directory, name)
+    val ext = f.extension.lowercase()
+    if (ext in VIDEO_TYPES) return companion.notice("No Windows, a 2B ainda não abre vídeos. Mande uma foto ou um print de um trecho.")
+    val img = runCatching { if (f.length() <= 40L * 1024 * 1024) ImageIO.read(f) else null }.getOrNull()
+        ?: return companion.notice("Não consegui abrir essa imagem. Use JPG, PNG, BMP ou GIF.")
+    companion.attachScreen(ScreenContext(null, toJpeg(img), Attachment.PHOTO))
 }
 
 private val appIcon: BitmapPainter? =
@@ -102,6 +130,9 @@ private fun gui() = application {
             openUrl = { url -> if (url.startsWith("https://")) runCatching { Desktop.getDesktop().browse(URI(url)) } },
             captureScreen = { capturing = true },
             autoScreenNote = "Ao abrir a conversa pelo símbolo da 2B. Fica só na memória e só é usada se você enviar.",
+            pickMedia = { pickPhoto(companion) },
+            pickLabel = "FOTO",
+            openFile = { f -> runCatching { Desktop.getDesktop().open(f) }.onFailure { companion.notice("Não achei um player de vídeo no Windows.") } },
         )
     }
 

@@ -1,5 +1,6 @@
 package br.offgr1d.companion.knowledge
 
+import br.offgr1d.companion.text.Text
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -13,6 +14,9 @@ data class Reflection(
     val newsTitle: String?,
     val newsSource: String?,
     val newsLink: String?,
+    /** Vídeo do dia no site, se houver. */
+    val video: String? = null,
+    val poster: String? = null,
 )
 
 data class Quote(val id: String, val date: String, val content: String, val author: String?)
@@ -37,6 +41,14 @@ data class Act(
     fun inStates(ufs: Collection<String>) =
         ufs.isEmpty() || uf in ufs || (uf == "BR" && (states.isEmpty() || states.any { it in ufs }))
 
+    /**
+     * Para os avisos: convocação com data marcada, ainda por vir, num dos estados escolhidos.
+     * Ato nacional, online ou sem data não conta: o aviso é para o que dá para ir de corpo presente.
+     */
+    fun canAttend(ufs: Collection<String>, today: LocalDate) =
+        call && date != null && date >= today.toString() && uf != null && uf != "BR" && uf in ufs &&
+            !ONLINE.containsMatchIn(Text.normalize(title))
+
     fun place() = when {
         uf == "BR" -> if (states.isEmpty()) "Nacional" else states.joinToString(", ")
         city != null -> "$city (${uf.orEmpty()})"
@@ -52,6 +64,10 @@ data class Act(
         }
         return if (hour == null) day else "$day às $hour"
     }
+
+    private companion object {
+        val ONLINE = Regex("\\b(online|on line|virtual|live|webinar\\w*|youtube|zoom|google meet|videoconferencia)\\b")
+    }
 }
 
 /** Conteúdo do dia do site, já na ordem de uso. */
@@ -62,7 +78,15 @@ class Daily(
 ) {
     fun upcoming(ufs: Collection<String>, today: LocalDate = todayBR()): List<Act> =
         acts.filter { it.upcoming(today) && it.inStates(ufs) }
-            .sortedWith(compareBy<Act> { it.date ?: "9" }.thenByDescending { it.published.orEmpty() })
+            .sortedWith(ORDER)
+
+    /** Atos aos quais dá para ir, nos estados escolhidos. Sem estado escolhido, nenhum. */
+    fun attendable(ufs: Collection<String>, today: LocalDate = todayBR()): List<Act> =
+        acts.filter { it.canAttend(ufs, today) }.sortedWith(ORDER)
+
+    private companion object {
+        val ORDER = compareBy<Act> { it.date ?: "9" }.thenByDescending { it.published.orEmpty() }
+    }
 }
 
 /** Data de hoje em Brasília, como no site. */

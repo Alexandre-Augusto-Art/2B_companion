@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.offgr1d.companion.chat.ChatMessage
 import br.offgr1d.companion.chat.Companion2B
+import br.offgr1d.companion.chat.Media
 import br.offgr1d.companion.chat.Mood
 import br.offgr1d.companion.chat.Persona
 import br.offgr1d.companion.chat.Tool
@@ -65,6 +66,8 @@ import br.offgr1d.companion.links.Level
 import br.offgr1d.companion.links.Verdict
 import br.offgr1d.companion.llm.ModelCatalog
 import br.offgr1d.companion.store.Settings
+import br.offgr1d.companion.screen.Attachment
+import java.io.File
 
 object Palette {
     val Bg = Color(0xFF0E0D10)
@@ -99,6 +102,12 @@ class PlatformActions(
     val extraSettings: @Composable ColumnScope.() -> Unit = {},
     /** O rosto da 2B. */
     val avatar: @Composable (Mood, Modifier) -> Unit = { mood, m -> Face(mood, m) },
+    /** Escolhe uma foto ou vídeo e chama [Companion2B.attachScreen]; null se não houver. */
+    val pickMedia: (() -> Unit)? = null,
+    val pickLabel: String = "FOTO/VÍDEO",
+    /** Toca um vídeo baixado dentro do app; null abre no player do sistema com [openFile]. */
+    val videoPlayer: (@Composable (File, Modifier) -> Unit)? = null,
+    val openFile: (File) -> Unit = {},
 )
 
 class AlertActions(
@@ -186,17 +195,26 @@ private fun Chat(app: Companion2B, state: UiState, platform: PlatformActions, co
     }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = list, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(state.messages) { Bubble(it, platform) }
+            items(state.messages) { Bubble(it, app, platform) }
             if (state.askAdult) item { AskAdult(app) }
             platform.alerts?.takeIf { !compact && !state.settings.alertsAsked }?.let { a -> item { AskAlerts(app, state, a) } }
         }
         state.screen?.let { s ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { Mono(if (state.screenUsed) "TELA GUARDADA (${s.describe()}): volta se você falar dela" else "TELA PRONTA (${s.describe()}): só vai se você enviar", Palette.Cyan, 11) }
+                if (s.kind != Attachment.SCREEN) s.image?.let { Thumb(it, Modifier.size(44.dp).padding(end = 8.dp)) }
+                Box(Modifier.weight(1f)) {
+                    Mono(when {
+                        s.kind == Attachment.PHOTO -> "FOTO PRONTA: vai com a próxima mensagem"
+                        s.kind == Attachment.VIDEO -> "VÍDEO PRONTO: a 2B vê 4 quadros, sem som"
+                        state.screenUsed -> "TELA GUARDADA (${s.describe()}): volta se você falar dela"
+                        else -> "TELA PRONTA (${s.describe()}): só vai se você enviar"
+                    }, Palette.Cyan, 11)
+                }
                 TextButton(onClick = { app.attachScreen(null) }) { Mono("TIRAR", Palette.Red, 11) }
             }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            platform.pickMedia?.let { pick -> Chip(platform.pickLabel, false, enabled = !state.busy) { pick() } }
             Tool.entries.forEach { t -> Chip(t.label, false, enabled = !state.busy) { app.use(t) } }
             Chip(if (state.settings.web) "WEB: LIGADA" else "WEB: DESLIGADA", state.settings.web) { app.setWeb(!state.settings.web) }
             platform.captureScreen?.let { capture -> Chip("LER TELA", false) { capture() } }
@@ -208,7 +226,10 @@ private fun Chat(app: Companion2B, state: UiState, platform: PlatformActions, co
                 placeholder = { Text("Fale com a 2B", color = Palette.Dim) },
             )
             if (state.busy) TextButton(onClick = app::stop) { Mono("PARAR", Palette.Red) }
-            else TextButton(onClick = { if (app.send(draft) != null) draft = "" }, enabled = draft.isNotBlank()) { Mono("ENVIAR", Palette.Green) }
+            else TextButton(
+                onClick = { if (app.send(draft) != null) draft = "" },
+                enabled = draft.isNotBlank() || (state.screen?.kind ?: Attachment.SCREEN) != Attachment.SCREEN,
+            ) { Mono("ENVIAR", Palette.Green) }
         }
     }
 }
@@ -223,14 +244,15 @@ private fun Chip(label: String, on: Boolean, enabled: Boolean = true, onClick: (
 }
 
 @Composable
-private fun Bubble(m: ChatMessage, platform: PlatformActions) {
+private fun Bubble(m: ChatMessage, app: Companion2B, platform: PlatformActions) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (m.fromUser) Alignment.End else Alignment.Start) {
         Column(
             Modifier.widthIn(max = 520.dp).background(if (m.fromUser) Color(0xFF12302A) else Palette.Panel, RoundedCornerShape(10.dp))
                 .border(1.dp, Palette.Line, RoundedCornerShape(10.dp)).padding(12.dp),
         ) {
-            if (m.withScreen) Mono("[com a tela]", Palette.Cyan, 10)
+            if (m.withScreen && m.media == null) Mono("[com a tela]", Palette.Cyan, 10)
             m.alert?.let { Mono("AVISO · ${it.feed.label}", Palette.Yellow, 10) }
+            m.media?.let { MediaView(it, app, platform, Modifier.padding(bottom = 8.dp)) }
             m.links.forEach { r ->
                 Mono("LINK ${r.summary()}", when (r.verdict) {
                     Verdict.DANGER -> Palette.Red
@@ -277,7 +299,8 @@ private fun AskAdult(app: Companion2B) {
 @Composable
 private fun AskAlerts(app: Companion2B, state: UiState, alerts: AlertActions) {
     Column(Modifier.fillMaxWidth().border(1.dp, Palette.Green, RoundedCornerShape(10.dp)).padding(12.dp)) {
-        Text("Quer que eu te avise quando sair a notícia do W4K3 PR0T0C0L, a mensagem do dia e atos novos?")
+        Text("Quer que eu te avise quando sair a notícia do W4K3 PR0T0C0L, com o vídeo, a mensagem do dia e atos no seu estado?")
+        Text("Para os atos, escolha seu estado em Ajustes.", color = Palette.Dim, fontSize = 12.sp)
         Text("O app consulta o site do 0FF-GR1D mais ou menos de hora em hora. Dá para mudar em Ajustes.", color = Palette.Dim, fontSize = 12.sp)
         Row {
             TextButton(onClick = {
@@ -310,6 +333,7 @@ private fun Today(app: Companion2B, state: UiState, platform: PlatformActions, o
     if (r == null) Text("Toque em ATUALIZAR para baixar.", color = Palette.Dim) else {
         Mono(if (r.date == today.toString()) "HOJE" else brDate(r.date), Palette.Dim, 11)
         Text(r.title, fontWeight = FontWeight.Bold)
+        r.video?.let { MediaView(Media(Attachment.VIDEO, url = it, posterUrl = r.poster), app, platform) }
         Text(r.excerpt)
         val news = r.newsLink
         if (news != null) Link("Notícia: ${r.newsTitle} (${r.newsSource})", news, platform)
@@ -482,7 +506,12 @@ private fun AlertSettings(app: Companion2B, state: UiState, alerts: AlertActions
     Toggle("Notícia do W4K3 PR0T0C0L", s.alertW4k3) { save(s.copy(alertW4k3 = it)) }
     Toggle("Mensagem do dia", s.alertQuote) { save(s.copy(alertQuote = it)) }
     Toggle("Atos e protestos", s.alertActs) { save(s.copy(alertActs = it)) }
-    Text("Estados dos atos: ${if (s.alertUfs.isEmpty()) "todos" else s.alertUfs.sorted().joinToString(", ")}. Atos nacionais sempre entram.", color = Palette.Dim, fontSize = 13.sp)
+    if (s.alertActs && s.alertUfs.isEmpty()) Text("Escolha seu estado para receber avisos de atos.", color = Palette.Yellow, fontSize = 13.sp)
+    Text(
+        "Seu estado: ${if (s.alertUfs.isEmpty()) "nenhum" else s.alertUfs.sorted().joinToString(", ")}. O aviso traz só convocações com data " +
+            "marcada, ainda por vir, nos estados escolhidos. Atos nacionais, online e sem data não entram. A aba HOJE continua mostrando todos.",
+        color = Palette.Dim, fontSize = 13.sp,
+    )
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         KnowledgeIndex.UF_NAMES.keys.forEach { uf ->
             val on = uf in s.alertUfs

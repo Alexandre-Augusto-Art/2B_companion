@@ -15,6 +15,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -46,12 +47,22 @@ import br.offgr1d.companion.ui.AlertActions
 import br.offgr1d.companion.ui.CompanionApp
 import br.offgr1d.companion.ui.Palette
 import br.offgr1d.companion.ui.PlatformActions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 abstract class BaseActivity : ComponentActivity() {
     protected val app get() = application as App
     protected val companion get() = app.companion
     protected var refresh by mutableIntStateOf(0)
+
+    // Seletor do Android: não pede permissão de galeria e só entrega o arquivo escolhido.
+    private val picker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) app.scope.launch(Dispatchers.IO) {
+            runCatching { MediaFiles.read(applicationContext, uri) }
+                .onSuccess { companion.attachScreen(it) }
+                .onFailure { companion.notice("Não consegui abrir esse arquivo.") }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,6 +93,9 @@ abstract class BaseActivity : ComponentActivity() {
         autoScreenNote = "Ao tocar na bolha. O Android pede autorização uma vez e mostra o aviso enquanto estiver ligado; ao bloquear " +
             "o celular, pode pedir de novo. A imagem fica só na memória e só é usada se você enviar.",
         extraSettings = extra,
+        pickMedia = { runCatching { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) } },
+        videoPlayer = { file, modifier -> VideoPlayer(file, modifier) },
+        openFile = {},
     )
 
     /** Sai da frente antes de ler: o que interessa é o app de baixo. */

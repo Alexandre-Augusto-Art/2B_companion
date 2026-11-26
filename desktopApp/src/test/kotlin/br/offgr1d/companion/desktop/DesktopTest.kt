@@ -46,11 +46,18 @@ class DesktopTest {
                 println("\n### ${t.label}\n" + app.state.value.messages.last().text)
                 assertFalse("Não consegui atualizar" in app.state.value.messages.last().text)
             }
-            app.saveSettings(Settings(alertW4k3 = true, alertQuote = true, alertActs = true))
+            app.send(Tool.NEWS.ask)!!.join()
+            val media = app.state.value.messages.last().media!!
+            val poster = app.picture(media.posterUrl!!)
+            val video = app.video(media.url!!)
+            println("\n### VÍDEO ${media.url} capa=${poster.size} vídeo=${video.length()} ${video.name}")
+            assertTrue(poster.size > 1000 && video.length() > 100_000 && app.cachedVideo(media.url!!) == video)
+            app.saveSettings(Settings(alertW4k3 = true, alertQuote = true, alertActs = true, alertUfs = listOf("SP")))
             assertEquals(0, app.checkAlerts()!!.size)
             assertEquals(0, app.checkAlerts()!!.size)
             println(app.state.value.net.map { "${it.url} ${it.result}" })
             app.panic(includeModels = true).join()
+            assertFalse(video.exists(), "o pânico apaga o vídeo")
         }
     }
 

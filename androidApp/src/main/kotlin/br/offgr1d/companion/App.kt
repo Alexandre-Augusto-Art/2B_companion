@@ -1,6 +1,8 @@
 package br.offgr1d.companion
 
 import android.app.Activity
+import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.os.Bundle
@@ -59,9 +61,17 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
     /** @return null se não deu para consultar */
     suspend fun checkAlerts(): List<Alert>? {
         val fresh = companion.checkAlerts() ?: return null
-        fresh.forEach { Notifications.alert(this, it) }
+        fresh.forEach { a ->
+            // A capa vai na notificação; o vídeo baixa em seguida, menos em dados móveis.
+            val picture = a.poster?.let { url -> runCatching { companion.picture(url) }.getOrNull() }
+                ?.let { b -> BitmapFactory.decodeByteArray(b, 0, b.size) }
+            Notifications.alert(this, a, picture)
+            if (a.video != null && !metered()) runCatching { companion.video(a.video!!) }
+        }
         return fresh
     }
+
+    private fun metered() = getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered ?: true
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)

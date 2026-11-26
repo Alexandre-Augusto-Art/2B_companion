@@ -4,6 +4,7 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
 import br.offgr1d.companion.chat.Companion2B
 import br.offgr1d.companion.chat.Tool
+import br.offgr1d.companion.screen.Attachment
 import br.offgr1d.companion.screen.ScreenContext
 import br.offgr1d.companion.store.BlobCipher
 import br.offgr1d.companion.store.BlobStore
@@ -44,7 +45,7 @@ class RenderTest {
         app.awaitReady()
         app.prepare()
         val scene = ImageComposeScene(412, height, Density(1f)) {
-            CompanionApp(app, PlatformActions(openUrl = {}, captureScreen = {}, alerts = AlertActions({}, {}, true, {})), compact, onClose = if (compact) ({}) else null, startTab = tab)
+            CompanionApp(app, PlatformActions(openUrl = {}, captureScreen = {}, alerts = AlertActions({}, {}, true, {}), pickMedia = {}), compact, onClose = if (compact) ({}) else null, startTab = tab)
         }
         try {
             repeat(5) { scene.render(it * 50_000_000L) }
@@ -56,6 +57,18 @@ class RenderTest {
             scene.close()
             scope.cancel()
         }
+    }
+
+    /** Foto enviada, vídeo do W4K3 recebido (com FEEDS_DIR e rede) e um vídeo esperando para ir. */
+    @Test fun midia() = render("midia", compact = false, height = 2300) {
+        val png = File("src/main/resources/icone.png").readBytes()
+        attachScreen(ScreenContext(null, png, Attachment.PHOTO))
+        send("")!!.join()
+        if (System.getenv("FEEDS_DIR") != null) {
+            send(Tool.NEWS.ask)!!.join()
+            state.value.messages.last().media?.posterUrl?.let { picture(it) }
+        }
+        attachScreen(ScreenContext(null, png, Attachment.VIDEO))
     }
 
     /** Os três quadros do rosto, grandes, para conferir contra a arte original. */

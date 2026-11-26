@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.graphics.Bitmap
 import android.content.Intent
 import android.provider.Settings
 import br.offgr1d.companion.alerts.Alert
@@ -43,7 +44,7 @@ object Notifications {
 
     fun allowed(c: Context) = manager(c).areNotificationsEnabled()
 
-    fun alert(c: Context, a: Alert) {
+    fun alert(c: Context, a: Alert, picture: Bitmap? = null) {
         createAlertChannels(c)
         val open = PendingIntent.getActivity(
             c, 3, MainActivity.chatIntent(c), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -55,7 +56,11 @@ object Notifications {
             .setColor(0xFF00FF84.toInt())
             .setContentTitle(a.title)
             .setContentText(a.text)
-            .setStyle(Notification.BigTextStyle().bigText("${a.text}\n\n2B: ${a.voice}"))
+            .setStyle(
+                if (picture != null) Notification.BigPictureStyle().bigPicture(picture).setSummaryText("2B: ${a.voice} Toque para ver o vídeo.")
+                else Notification.BigTextStyle().bigText("${a.text}\n\n2B: ${a.voice}"),
+            )
+            .apply { if (picture != null) setLargeIcon(picture) }
             .setContentIntent(open)
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_RECOMMENDATION)

@@ -77,12 +77,21 @@ object FeedParser {
         val news = obj["news"]
         val refl = obj["reflection"]
         val content = Text.stripHtml(refl?.str("content").orEmpty())
+        val video = obj["video"]
         Reflection(
             id = e.str("id") ?: return@mapNotNull null, date = e.str("date"), title = refl?.str("title") ?: return@mapNotNull null,
             excerpt = Text.stripHtml(refl.str("excerpt") ?: content), content = content,
             newsTitle = news?.str("title"), newsSource = news?.str("source"), newsLink = news?.https("link"),
+            video = video?.str("src")?.let(::siteFile), poster = video?.str("poster")?.let(::siteFile),
         )
     }.sortedByDescending { it.date.orEmpty() }
+
+    /** Arquivo do próprio site, com endereço completo. Outro site ou caminho estranho fica de fora. */
+    fun siteFile(path: String): String? = when {
+        path.startsWith(SITE) -> path.takeIf { ".." !in it }
+        path.contains(':') || path.contains("..") || path.startsWith("//") -> null
+        else -> SITE + path.trimStart('/')
+    }
 
     fun quotes(raw: String): List<Quote> = Json.parseToJsonElement(raw).jsonArray.mapNotNull { e ->
         val date = e.str("date") ?: return@mapNotNull null

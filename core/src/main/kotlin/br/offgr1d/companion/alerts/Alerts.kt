@@ -28,6 +28,9 @@ data class Alert(
     val voice: String,
     val url: String,
     val read: Boolean = false,
+    /** Vídeo do W4K3 no site. */
+    val video: String? = null,
+    val poster: String? = null,
 )
 
 @Serializable
@@ -84,7 +87,7 @@ object Alerts {
             fresh += when (feed) {
                 AlertFeed.W4K3 -> daily.reflections.filter { it.id in new }.take(MAX_POSTS).asReversed().map(::reflection)
                 AlertFeed.QUOTE -> daily.quotes.filter { it.id in new }.take(MAX_POSTS).asReversed().map(::quote)
-                AlertFeed.ACTS -> listOfNotNull(acts(daily.upcoming(s.alertUfs, today).filter { it.id in new }, today))
+                AlertFeed.ACTS -> listOfNotNull(acts(daily.attendable(s.alertUfs, today).filter { it.id in new }, today))
             }
         }
         return AlertState(seen, (state.inbox + fresh).takeLast(MAX_INBOX)) to fresh
@@ -93,7 +96,7 @@ object Alerts {
     fun reflection(r: Reflection) = Alert(
         AlertFeed.W4K3, r.id, "W4K3 PR0T0C0L${r.date?.let { " · ${brDate(it)}" }.orEmpty()}: ${r.title}",
         Text.cut(r.excerpt, 400) + r.newsTitle?.let { "\nNotícia: $it (${r.newsSource ?: "fonte no site"})" }.orEmpty(),
-        voice(AlertFeed.W4K3, r.id), FeedParser.SITE + "w4k3-protocol.html",
+        voice(AlertFeed.W4K3, r.id), FeedParser.SITE + "w4k3-protocol.html", video = r.video, poster = r.poster,
     )
 
     fun quote(q: Quote) = Alert(

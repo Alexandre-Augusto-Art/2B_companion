@@ -6,6 +6,7 @@ import br.offgr1d.companion.llm.ModelCatalog
 import br.offgr1d.companion.llm.ModelStore
 import br.offgr1d.companion.net.NetLog
 import br.offgr1d.companion.net.SafeHttp
+import br.offgr1d.companion.screen.Attachment
 import br.offgr1d.companion.screen.ScreenContext
 import br.offgr1d.companion.store.BlobStore
 import br.offgr1d.companion.store.Settings
@@ -89,6 +90,29 @@ class RealModelTest {
                 fem = 0; masc = 0
                 count("oi 2B", "tive um dia longo no trabalho", "acho que preciso descansar")
                 println("\n### MASCULINO: feminino=$fem masculino=$masc")
+                withTimeout(30_000) { app.panic(includeModels = false).join() }
+                scope.cancel()
+                return@runBlocking
+            }
+            if (System.getenv("MEDIA") == "1") {
+                suspend fun media(kind: Attachment, img: ByteArray, q: String) {
+                    app.attachScreen(ScreenContext(null, img, kind))
+                    val t = System.nanoTime()
+                    withTimeout(400_000) { app.send(q)!!.join() }
+                    val m = app.state.value.messages.last()
+                    println("\n### [${kind.label}] ${q.ifEmpty { "(sem texto)" }}\n[${(System.nanoTime() - t) / 1_000_000} ms] ${m.text}")
+                }
+                app.clearChat()
+                media(Attachment.PHOTO, File("src/main/resources/icone.png").readBytes(), "")
+                media(Attachment.PHOTO, File("src/main/resources/icone.png").readBytes(), "quem é essa?")
+                val grid = java.awt.image.BufferedImage(1024, 1024, java.awt.image.BufferedImage.TYPE_INT_RGB)
+                listOf("CENA 1: pessoas chegando na praça", "CENA 2: faixa SEM ANISTIA", "CENA 3: polícia formando fila", "CENA 4: multidão dispersando")
+                    .forEachIndexed { i, line ->
+                        val cell = javax.imageio.ImageIO.read(drawScreen(line).inputStream())
+                        grid.createGraphics().apply { drawImage(cell, (i % 2) * 512, (i / 2) * 512, 512, 512, null); dispose() }
+                    }
+                val out = java.io.ByteArrayOutputStream().also { javax.imageio.ImageIO.write(grid, "jpg", it) }.toByteArray()
+                media(Attachment.VIDEO, out, "")
                 withTimeout(30_000) { app.panic(includeModels = false).join() }
                 scope.cancel()
                 return@runBlocking
