@@ -17,6 +17,7 @@ import br.offgr1d.companion.llm.LlmRequest
 import br.offgr1d.companion.llm.ModelCatalog
 import br.offgr1d.companion.llm.ModelSpec
 import br.offgr1d.companion.llm.ModelStore
+import br.offgr1d.companion.llm.NativeText
 import br.offgr1d.companion.llm.Turn
 import br.offgr1d.companion.net.NetEvent
 import br.offgr1d.companion.net.NetLog
@@ -80,6 +81,8 @@ data class UiState(
     val alerts: List<Alert> = emptyList(),
     /** Muda quando a interface deve mostrar a conversa (a pessoa tocou numa notificação). */
     val chatFocus: Int = 0,
+    /** Esperando a pessoa confirmar que tem 18 anos ou mais. */
+    val askAdult: Boolean = false,
     val settings: Settings = Settings(),
     val memories: List<String> = emptyList(),
     val docs: Int = 0,
@@ -137,7 +140,7 @@ class Companion2B(
             it.copy(
                 settings = settings, memories = memories, docs = kb.index.docs.size, daily = kb.daily, pages = Toolbox.pages(kb.index.docs),
                 alerts = alertState.inbox,
-                messages = listOf(ChatMessage(false, Persona.greeting())) + history.map { m -> ChatMessage(m.fromUser, m.text) } +
+                messages = listOf(ChatMessage(false, Persona.greeting(settings.aigf))) + history.map { m -> ChatMessage(m.fromUser, m.text) } +
                     alertState.inbox.filter { a -> !a.read }.map(::alertMessage),
                 readyModels = ready(),
                 notice = problems.takeIf { p -> p.isNotEmpty() }?.let { p -> "Não consegui ler: ${p.joinToString()}." },
@@ -167,10 +170,11 @@ class Companion2B(
         val question = text.trim()
         val s = _state.value
         if (question.isEmpty() || s.busy) return null
+        if (AIGF_COMMAND.matches(question.lowercase())) return toggleAigf(question)
         val history = historyOf(s.messages.drop(1))
         val lastTool = s.messages.lastOrNull()?.tool
         val tool = Toolbox.match(question) ?: Toolbox.followUp(lastTool, question)
-        val casual = SmallTalk.isCasual(question)
+        val casual = SmallTalk.isCasual(question, s.settings.aigf)
         // Leitura manual vale para uma pergunta. Automática: a primeira sobre a tela e as que falarem dela de novo.
         val auto = s.settings.autoScreen
         val aboutScreen = SCREEN_WORDS.containsMatchIn(Text.normalize(question))
@@ -257,7 +261,7 @@ class Companion2B(
         val spec = model()
         val hasModel = isReady(spec)
         val prompt = PromptBuilder.build(question, hits, results, links, screen, history, _state.value.memories, spec.vision && hasModel,
-            alerts = alerts, casual = chat)
+            alerts = alerts, casual = chat, aigf = _state.value.settings.aigf, address = _state.value.settings.address)
         if (prompt.ordersRemoved) notice("Cuidado: este conteúdo tinha texto tentando dar ordens à IA. Tirei esse trecho.")
         _state.update {
             it.copy(trace = Trace(prompt.request.system, prompt.request.user, prompt.request.history.size, prompt.request.image != null, hasModel))
@@ -292,7 +296,8 @@ class Companion2B(
             return
         }
         // Sem citação, só aparece fonte que orienta: opinião ou notícia solta confundiria.
-        val loose = prompt.sources.filter { s -> hits.getOrNull(s.n - 1)?.doc?.kind.let { it == null || it == DocKind.GUIA || it == DocKind.FERRAMENTA } }
+        // Pergunta sobre a história dela não ganha guia ou site como fonte.
+        val loose = if (hits.firstOrNull()?.doc?.kind == DocKind.HISTORIA) emptyList() else prompt.sources.filter { s -> hits.getOrNull(s.n - 1)?.doc?.kind.let { it == null || it == DocKind.GUIA || it == DocKind.FERRAMENTA } }
         generate(spec, prompt.request, prompt.sources, links, guide, loose)
     }
 
@@ -301,7 +306,8 @@ class Companion2B(
         val out = ArrayList<Turn>()
         var question: String? = null
         for (m in messages) {
-            if (m.fromUser) question = m.text
+            if (m.fromUser && AIGF_COMMAND.matches(m.text.lowercase())) question = null
+            else if (m.fromUser) question = m.text
             else if (question != null && !m.interrupted && m.text.isNotEmpty()) {
                 out += Turn(true, question)
                 out += Turn(false, m.text)
@@ -349,7 +355,7 @@ class Companion2B(
             val raw = StringBuilder()
             ready.generate(request).collect { piece ->
                 raw.append(piece)
-                setLast(PromptBuilder.onlyKnownLinks(raw.toString(), sources), Mood.TALKING)
+                setLast(PromptBuilder.onlyKnownLinks(NativeText.noEmoji(raw.toString()), sources), Mood.TALKING)
             }
             // Link que só existe na imagem: se a IA o leu, passa pela mesma análise.
             val seen = if (request.image == null) emptyList() else
@@ -390,7 +396,7 @@ class Companion2B(
 
     fun clearChat() {
         if (_state.value.busy) return
-        _state.update { it.copy(messages = listOf(ChatMessage(false, Persona.greeting())), trace = null, screen = null) }
+        _state.update { it.copy(messages = listOf(ChatMessage(false, Persona.greeting(it.settings.aigf))), trace = null, screen = null, askAdult = false) }
         markAlertsRead()
         scope.launch(Dispatchers.IO) { data.saveHistory(emptyList()) }
     }
@@ -472,6 +478,35 @@ class Companion2B(
             withContext(Dispatchers.IO) { models.delete(m) }
             _state.update { it.copy(readyModels = ready()) }
         }
+    }
+
+    // ---------- modo AIGF ----------
+
+    /** #AIGF liga e desliga. Na primeira vez, pede a confirmação de idade. Não passa pela IA nem entra no histórico. */
+    private fun toggleAigf(command: String): Job? {
+        val s = _state.value.settings
+        val reply = when {
+            s.aigf -> {
+                saveSettings(s.copy(aigf = false))
+                "Voltei pro modo amiga. Continuo aqui do mesmo jeito."
+            }
+            !s.adult -> {
+                _state.update { it.copy(askAdult = true) }
+                "Esse modo é só para maiores de 18. Você confirma que tem 18 anos ou mais?"
+            }
+            else -> {
+                saveSettings(s.copy(aigf = true))
+                AIGF_ON
+            }
+        }
+        _state.update { it.copy(messages = it.messages + ChatMessage(true, command) + ChatMessage(false, reply), notice = null) }
+        return Job().apply { complete() }
+    }
+
+    fun confirmAdult(yes: Boolean) {
+        _state.update { it.copy(askAdult = false) }
+        if (yes) saveSettings(_state.value.settings.copy(aigf = true, adult = true))
+        _state.update { it.copy(messages = it.messages + ChatMessage(false, if (yes) AIGF_ON else "Tudo bem, seguimos como amigas.")) }
     }
 
     // ---------- avisos ----------
@@ -584,6 +619,8 @@ class Companion2B(
 
     companion object {
         private val REMEMBER = Regex("(?is)(?:lembre|lembra|guarde|guarda|memorize)(?:-se)?\\s+(?:de\\s+)?que\\s+(.+)")
+        private val AIGF_COMMAND = Regex("\\s*#aigf\\s*")
+        private const val AIGF_ON = "Modo AIGF ligado. Oi, amor. Agora é só a gente. Para voltar ao normal, mande #AIGF de novo."
         private val SCREEN_WORDS = Regex("\\b(tela|aqui|print|imagem|captura|isso|isto|essa?|esta|este|mensagem|pagina|transcrev\\w*|resum\\w*|traduz\\w*)\\b")
         /** Guia urgente e o que a pessoa precisa dizer para ele valer. */
         private val URGENT = mapOf(

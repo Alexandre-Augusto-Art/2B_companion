@@ -76,6 +76,8 @@ object Palette {
     val Cyan = Color(0xFF22D3EE)
     val Yellow = Color(0xFFFACC15)
     val Red = Color(0xFFF43F5E)
+    /** Cor do rosto da 2B, a mesma da arte original. */
+    val Face = Color(0xFF00FF00)
 }
 
 fun Mood.color(): Color = when (this) {
@@ -95,8 +97,8 @@ class PlatformActions(
     val autoScreenNote: String = "A tela fica só na memória e só é usada se você enviar.",
     /** Controles próprios do sistema nos Ajustes (bolha, assistente padrão...). */
     val extraSettings: @Composable ColumnScope.() -> Unit = {},
-    /** Imagem da 2B. Enquanto a arte oficial não chega, usa o símbolo provisório. */
-    val avatar: @Composable (Mood, Modifier) -> Unit = { mood, m -> DefaultAvatar(mood, m) },
+    /** O rosto da 2B. */
+    val avatar: @Composable (Mood, Modifier) -> Unit = { mood, m -> Face(mood, m) },
 )
 
 class AlertActions(
@@ -155,7 +157,7 @@ private fun Mono(text: String, color: Color = Palette.Text, size: Int = 13) =
 @Composable
 private fun Header(state: UiState, platform: PlatformActions, onClose: (() -> Unit)?) {
     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        platform.avatar(state.mood, Modifier.size(44.dp))
+        platform.avatar(state.mood, Modifier.size(60.dp, 48.dp))
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(Persona.NAME, color = Palette.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
             Mono(state.status.ifEmpty { idleStatus(state) }, state.mood.color(), 11)
@@ -167,6 +169,7 @@ private fun Header(state: UiState, platform: PlatformActions, onClose: (() -> Un
 /** O que fica ligado sozinho aparece sempre, para ninguém esquecer. */
 private fun idleStatus(state: UiState): String = listOfNotNull(
     "IA local",
+    "AIGF".takeIf { state.settings.aigf },
     "web ligada".takeIf { state.settings.web },
     "lê a tela".takeIf { state.settings.autoScreen },
     "rede só por Tor".takeIf { state.settings.useTor },
@@ -184,6 +187,7 @@ private fun Chat(app: Companion2B, state: UiState, platform: PlatformActions, co
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = list, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(state.messages) { Bubble(it, platform) }
+            if (state.askAdult) item { AskAdult(app) }
             platform.alerts?.takeIf { !compact && !state.settings.alertsAsked }?.let { a -> item { AskAlerts(app, state, a) } }
         }
         state.screen?.let { s ->
@@ -259,6 +263,14 @@ private fun Guide(doc: Doc) {
     ) {
         Mono("${if (open) "−" else "+"} GUIA CONFERIDO: ${doc.title}", Palette.Green, 11)
         if (open) Text(doc.text, fontSize = 14.sp, lineHeight = 19.sp)
+    }
+}
+
+@Composable
+private fun AskAdult(app: Companion2B) {
+    Row(Modifier.fillMaxWidth().border(1.dp, Palette.Line, RoundedCornerShape(10.dp)).padding(4.dp)) {
+        TextButton(onClick = { app.confirmAdult(true) }) { Mono("TENHO 18 OU MAIS", Palette.Green) }
+        TextButton(onClick = { app.confirmAdult(false) }) { Mono("CANCELAR", Palette.Dim) }
     }
 }
 
@@ -411,6 +423,13 @@ private fun SettingsScreen(app: Companion2B, state: UiState, platform: PlatformA
         app.saveSettings(s.copy(autoClear = it, saveHistory = if (it) false else s.saveHistory))
     }
     TextButton(onClick = app::clearChat, enabled = !state.busy) { Mono("LIMPAR AGORA", Palette.Cyan) }
+    Text("Como a 2B fala com você")
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("" to "SEM GÊNERO", "f" to "FEMININO", "m" to "MASCULINO").forEach { (v, label) ->
+            Chip(label, s.address == v) { app.saveSettings(s.copy(address = v)) }
+        }
+    }
+    Text("Sem gênero: ela evita palavras como amiga ou amigo e segue o que você usar para falar de si.", color = Palette.Dim, fontSize = 12.sp)
 
     platform.alerts?.let { AlertSettings(app, state, it) }
 

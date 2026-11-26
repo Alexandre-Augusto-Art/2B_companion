@@ -21,6 +21,10 @@
 - [ ] Avisos na hora (hoje podem atrasar; exigiria um servidor)
 
 ## 0.3
+- [x] Rosto animado e ícone a partir da arte
+- [x] História da personagem
+- [x] Versão de teste para Windows, sem instalador
+- [ ] Testar o Windows com captura de tela e vários monitores
 - [ ] Busca por significado (embeddings locais)
 - [ ] OCR local, para ler imagens com modelo só de texto
 - [ ] Animações da personagem

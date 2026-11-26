@@ -24,9 +24,14 @@ object SmallTalk {
             "minha conta|celular|whatsapp|signal|telegram|tor|vpn|antivirus|criptografia|reflexao|reflexoes|dedsec|0ff|grid|w4k3|tarot|gacha|f4c3|bitchat|remedio|dose|sintoma\\w*|medico)\\b",
     )
 
-    fun isCasual(question: String): Boolean {
+    /** @param intimate no modo AIGF quase tudo é papo; assunto sério continua sério. */
+    private val LORE = Regex("\\b(eva|psicofago|blackwall|barreira negra|netrunner|269|alf|abatedouro|cyberpsicose|seu passado|sua (historia|origem|metade|irma|arma)|de onde voce veio|como voce nasceu|como voce surgiu)\\b")
+
+    fun isCasual(question: String, intimate: Boolean = false): Boolean {
         val q = Text.normalize(question)
+        if (LORE.containsMatchIn(q)) return false
         if (SERIOUS.containsMatchIn(q) || "http" in q) return false
+        if (intimate) return true
         val words = q.split(' ').size
         return (OPENERS.containsMatchIn(q) && words <= 12) || FEELINGS.containsMatchIn(q) || FUN.containsMatchIn(q)
     }

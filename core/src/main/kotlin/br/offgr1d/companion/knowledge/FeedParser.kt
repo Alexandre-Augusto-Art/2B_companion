@@ -27,6 +27,10 @@ object FeedParser {
             "reflections" -> reflections(raw).map(::reflection)
             "motivations" -> quotes(raw).map(::quote)
             "guides" -> root.list("guides").mapNotNull(::guide)
+            "lore" -> root.list("lore").mapNotNull { e ->
+                Doc("historia:${e.str("id") ?: return@mapNotNull null}", DocKind.HISTORIA, e.str("title") ?: return@mapNotNull null,
+                    e.str("text") ?: return@mapNotNull null, source = "2B", keywords = e.strings("keywords"))
+            }
             "factcheck" -> { // configuração do analisador de links: só valida
                 require(root.list("trusted").isNotEmpty()) { "lista de sites vazia" }
                 emptyList()

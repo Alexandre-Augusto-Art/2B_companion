@@ -253,6 +253,7 @@ class CompanionTest {
         val low = 0xDE0A.toChar()
         assertEquals("olá , ção fim", NativeText.safe("olá $high$low, ç$high" + "ão" + 0.toChar() + " fim"))
         assertEquals("sem nada especial", NativeText.safe("sem nada especial"))
+        assertEquals("piada boa! fim", NativeText.noEmoji("piada boa! $high$low fim"))
     }
 
     @Test fun `conteúdo de fora não fecha o bloco nem imita a pergunta`() {
@@ -292,6 +293,15 @@ class CompanionTest {
         assertTrue("5 frases" in user("isso é golpe?"))
         assertFalse("5 frases" in user("Transcreva o texto"))
         assertFalse("5 frases" in user("traduza isso"))
+    }
+
+    @Test fun `tratamento segue o ajuste e o prompt não chama ninguém de ela`() {
+        fun sys(g: String) = PromptBuilder.build("oi", emptyList(), emptyList(), emptyList(), null, emptyList(), emptyList(), false, address = g, aigf = true).request.system
+        assertTrue("não sabe o gênero" in sys(""))
+        assertTrue("no feminino" in sys("f") && "não sabe o gênero" !in sys("f"))
+        assertTrue("no masculino" in sys("m"))
+        listOf(" ela ", " dela", "a pessoa disse", "ela já contou").forEach { assertFalse(it in sys("").substringBefore("TRATAMENTO"), it) }
+        assertTrue("não invente fatos" in sys(""))
     }
 
     @Test fun `prompt cabe no limite com tudo no máximo`() {

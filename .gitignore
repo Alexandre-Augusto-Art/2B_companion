@@ -12,3 +12,4 @@ keystore.properties
 hs_err*.log
 *.apk
 *.aab
+/2B-Companion-Windows/

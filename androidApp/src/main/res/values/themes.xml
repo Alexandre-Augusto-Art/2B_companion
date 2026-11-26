@@ -10,4 +10,5 @@
     </style>
     <style name="Theme.TwoB.Invisible" parent="android:Theme.Translucent.NoTitleBar" />
     <color name="bg">#0E0D10</color>
+    <color name="launcher_bg">#00FF00</color>
 </resources>

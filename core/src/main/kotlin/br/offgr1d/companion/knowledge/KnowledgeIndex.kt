@@ -63,6 +63,7 @@ class KnowledgeIndex(val docs: List<Doc>) {
             score *= when (d.kind) {
                 DocKind.REFLEXAO -> 0.6
                 DocKind.GUIA -> 1.15
+                DocKind.HISTORIA -> 1.3
                 // Falar de protesto não é pedir a agenda: sem estado, ato só entra se for bem parecido.
                 DocKind.ATO -> if (uf == null) 0.5 else 1.0
                 else -> 1.0

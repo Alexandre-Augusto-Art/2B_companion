@@ -24,6 +24,12 @@ data class Settings(
     val alertUfs: List<String> = emptyList(),
     /** Já respondeu se quer avisos. */
     val alertsAsked: Boolean = false,
+    /** Modo namorada virtual, ligado e desligado pelo comando #AIGF no chat. */
+    val aigf: Boolean = false,
+    /** Como a 2B fala com você: "f", "m" ou vazio (sem marcar gênero). */
+    val address: String = "",
+    /** Confirmou ter 18 anos ou mais. */
+    val adult: Boolean = false,
 ) {
     val anyAlert get() = alertW4k3 || alertQuote || alertActs
 }

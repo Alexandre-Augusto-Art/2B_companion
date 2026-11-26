@@ -5,9 +5,6 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.AssetManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -19,7 +16,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -42,24 +38,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import br.offgr1d.companion.capture.CaptureActivity
 import br.offgr1d.companion.capture.CaptureService
-import br.offgr1d.companion.chat.Mood
 import br.offgr1d.companion.overlay.OverlayService
 import br.offgr1d.companion.ui.AlertActions
 import br.offgr1d.companion.ui.CompanionApp
-import br.offgr1d.companion.ui.DefaultAvatar
 import br.offgr1d.companion.ui.Palette
 import br.offgr1d.companion.ui.PlatformActions
 import kotlinx.coroutines.launch
-
-/** Arte em assets/avatar/{idle,thinking,talking,alert}.png. Sem arquivo, usa o símbolo provisório. */
-object AvatarArt {
-    fun load(assets: AssetManager, mood: Mood): Bitmap? =
-        runCatching { assets.open("avatar/${mood.name.lowercase()}.png").use(BitmapFactory::decodeStream) }.getOrNull()
-}
 
 abstract class BaseActivity : ComponentActivity() {
     protected val app get() = application as App
@@ -95,7 +82,6 @@ abstract class BaseActivity : ComponentActivity() {
         autoScreenNote = "Ao tocar na bolha. O Android pede autorização uma vez e mostra o aviso enquanto estiver ligado; ao bloquear " +
             "o celular, pode pedir de novo. A imagem fica só na memória e só é usada se você enviar.",
         extraSettings = extra,
-        avatar = { mood, m -> Avatar(mood, m) },
     )
 
     /** Sai da frente antes de ler: o que interessa é o app de baixo. */
@@ -115,12 +101,6 @@ abstract class BaseActivity : ComponentActivity() {
         } catch (e: ActivityNotFoundException) {
             companion.notice("Nenhum app para abrir isso.")
         }
-    }
-
-    @Composable
-    private fun Avatar(mood: Mood, modifier: Modifier) {
-        val image = remember(mood) { (AvatarArt.load(assets, mood) ?: AvatarArt.load(assets, Mood.IDLE))?.asImageBitmap() }
-        if (image != null) Image(image, "2B", modifier) else DefaultAvatar(mood, modifier)
     }
 }
 

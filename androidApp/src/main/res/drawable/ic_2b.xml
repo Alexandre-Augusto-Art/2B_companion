@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Ícone de notificação. Gerado por design/rosto/gerar.py. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#FFFFFFFF" android:pathData="M6.5,10h3v4h-3z M10.5,8h3v8h-3z M14.5,10h3v4h-3z" />
+    <group android:translateX="0.720" android:translateY="3.992" android:scaleX="0.019386" android:scaleY="0.019386">
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M121.843 234.254 L97.854 172.124 L203.693 215 L327.793 185.807 L492.172 350.186 L532.996 567.335 L165.125 638.963 L194.856 596.151 L0 262.915 Z M311.839 244.391 L165.125 281.234 L155.405 393.616 L232.707 567.335 L503.95 553.544 L454.584 360.948 Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M1041.912 234.254 L1065.901 172.124 L960.062 215 L835.962 185.807 L671.583 350.186 L630.759 567.335 L998.631 638.963 L968.899 596.151 L1163.755 262.915 Z M851.917 244.391 L998.631 281.234 L1008.35 393.616 L931.048 567.335 L659.805 553.544 L709.171 360.948 Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M485.418 406.153 L451.428 529.874 L383.45 529.874 L349.461 406.153 L383.45 282.432 L469.526 348.308 Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M678.337 406.153 L712.327 529.874 L780.305 529.874 L814.295 406.153 L780.305 282.432 L694.229 348.308 Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M503.95 145.388 L329.677 46.796 L72.271 80.552 L165.125 115.748 L329.677 115.748 L441.829 198.491 Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M659.805 145.388 L834.078 46.796 L1091.485 80.552 L998.631 115.748 L834.078 115.748 L721.927 198.491 Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M492.172 808.343 L581.878 733.591 L581.878 762.265 L492.172 826.14 L411.039 750.058 Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M581.878 762.265 L581.878 733.591 L671.583 808.343 L752.716 750.058 L671.583 826.14 Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M210.817 135.328 L232.215 156.726 L210.817 178.124 L189.419 156.726 Z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M155.405 0 L176.803 21.398 L155.405 42.796 L134.007 21.398 Z" />
+    </group>
 </vector>

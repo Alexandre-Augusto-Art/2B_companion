@@ -3,58 +3,102 @@ package br.offgr1d.companion.overlay
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.RectF
+import android.graphics.Path
 import android.view.View
-import br.offgr1d.companion.AvatarArt
+import androidx.compose.ui.graphics.toArgb
 import br.offgr1d.companion.chat.Mood
+import br.offgr1d.companion.ui.FaceArt
+import br.offgr1d.companion.ui.FaceFrame
+import br.offgr1d.companion.ui.FaceMotion
+import br.offgr1d.companion.ui.Palette
 
-/** A 2B desenhada na bolha: usa a arte dos assets ou o símbolo provisório. */
+/** A 2B na bolha: o mesmo rosto do app, num disco escuro para aparecer sobre qualquer tela. */
 class AvatarView(context: Context) : View(context) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val art = Mood.entries.associateWith { AvatarArt.load(context.assets, it) }
-    private val box = RectF()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val paths = FaceFrame.entries.associateWith { f ->
+        f.shapes.map { s ->
+            Path().apply {
+                fillType = Path.FillType.EVEN_ODD
+                s.rings.forEach { r ->
+                    moveTo(r[0], r[1])
+                    for (i in 2 until r.size step 2) lineTo(r[i], r[i + 1])
+                    close()
+                }
+            }
+        }
+    }
+    private var frame = FaceFrame.NEUTRAL
+    private var blinking = false
+    private var mouthOpen = false
+    private var pulseUp = false
+    private var faceAlpha = 255
 
     var mood: Mood = Mood.IDLE
         set(value) {
+            if (field == value) return
             field = value
-            invalidate()
+            removeCallbacks(mouth)
+            removeCallbacks(pulse)
+            mouthOpen = false
+            faceAlpha = 255
+            if (value == Mood.TALKING) postDelayed(mouth, FaceMotion.nextMouthMs())
+            if (value == Mood.THINKING) post(pulse)
+            update()
         }
+
+    private val blink: Runnable = Runnable {
+        blinking = !blinking
+        update()
+        postDelayed(blink, if (blinking) FaceMotion.BLINK_MS else FaceMotion.nextBlinkMs())
+    }
+    private val mouth: Runnable = Runnable {
+        mouthOpen = !mouthOpen
+        update()
+        postDelayed(mouth, FaceMotion.nextMouthMs())
+    }
+    private val pulse: Runnable = Runnable {
+        faceAlpha += if (pulseUp) 20 else -20
+        if (faceAlpha >= 255) { faceAlpha = 255; pulseUp = false }
+        if (faceAlpha <= 115) { faceAlpha = 115; pulseUp = true }
+        invalidate()
+        postDelayed(pulse, 50)
+    }
+
+    private fun update() {
+        frame = when {
+            blinking -> FaceFrame.BLINK
+            mouthOpen -> FaceFrame.TALK
+            else -> FaceFrame.NEUTRAL
+        }
+        invalidate()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        postDelayed(blink, FaceMotion.nextBlinkMs())
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(blink)
+        removeCallbacks(mouth)
+        removeCallbacks(pulse)
+        super.onDetachedFromWindow()
+    }
 
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        val bitmap = art[mood] ?: art[Mood.IDLE]
-        if (bitmap != null) {
-            val s = minOf(w / bitmap.width, h / bitmap.height)
-            box.set((w - bitmap.width * s) / 2, (h - bitmap.height * s) / 2, (w + bitmap.width * s) / 2, (h + bitmap.height * s) / 2)
-            canvas.drawBitmap(bitmap, null, box, paint)
-            return
-        }
-        val color = when (mood) {
-            Mood.IDLE -> 0xFF00FF84
-            Mood.THINKING -> 0xFFFACC15
-            Mood.TALKING -> 0xFF22D3EE
-            Mood.ALERT -> 0xFFF43F5E
-        }.toInt()
         val r = minOf(w, h) / 2
-        paint.style = Paint.Style.FILL
-        paint.color = 0xFF0E0D10.toInt()
+        paint.color = Palette.Bg.toArgb()
         canvas.drawCircle(w / 2, h / 2, r, paint)
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = r / 12
-        paint.color = color
-        canvas.drawCircle(w / 2, h / 2, r - paint.strokeWidth, paint)
-        paint.style = Paint.Style.FILL
-        val u = r / 6
-        val bars = when (mood) {
-            Mood.IDLE -> intArrayOf(2, 4, 2)
-            Mood.THINKING -> intArrayOf(2, 2, 2)
-            Mood.TALKING -> intArrayOf(4, 6, 4)
-            Mood.ALERT -> intArrayOf(6, 6, 6)
-        }
-        bars.forEachIndexed { i, b ->
-            val x = w / 2 + (i - 1) * u * 2 - u * 0.75f
-            canvas.drawRect(x, h / 2 - u * b / 2, x + u * 1.5f, h / 2 + u * b / 2, paint)
-        }
+        val side = r * 1.5f // o rosto cabe no disco com folga
+        val k = minOf(side / FaceArt.WIDTH, side / FaceArt.HEIGHT)
+        canvas.save()
+        canvas.translate((w - FaceArt.WIDTH * k) / 2, (h - FaceArt.HEIGHT * k) / 2)
+        canvas.scale(k, k)
+        paint.color = FaceMotion.tint(mood, Palette.Face).toArgb()
+        paint.alpha = faceAlpha
+        paths.getValue(frame).forEach { canvas.drawPath(it, paint) }
+        canvas.restore()
     }
 }

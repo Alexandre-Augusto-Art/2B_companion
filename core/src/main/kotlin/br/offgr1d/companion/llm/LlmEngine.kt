@@ -20,6 +20,9 @@ class LlmRequest(
  */
 object NativeText {
     fun safe(s: String): String = s.filterNot { it.isSurrogate() || it.code == 0 }
+
+    /** A 2B não usa emoji; o modelo às vezes escapa. Tira os do plano astral e os seletores de variação. */
+    fun noEmoji(s: String): String = s.filterNot { it.isSurrogate() || it.code == 0xFE0F || it.code == 0x200D }.replace(Regex("[ \t]{2,}"), " ")
 }
 
 /** Motor de IA local. Trocar de motor não muda o resto do app. */

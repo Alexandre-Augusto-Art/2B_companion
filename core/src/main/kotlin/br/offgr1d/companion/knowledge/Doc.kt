@@ -8,6 +8,7 @@ enum class DocKind(val label: String) {
     ATO("ATO / MANIFESTAÇÃO"),
     REFLEXAO("OPINIÃO (usa ficção como metáfora, não é fato)"),
     FRASE("FRASE"),
+    HISTORIA("HISTÓRIA DA 2B (ficção de origem da personagem, não é fato)"),
 }
 
 data class Doc(

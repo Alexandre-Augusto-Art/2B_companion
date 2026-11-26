@@ -30,6 +30,10 @@ compose.desktop {
             targetFormats(TargetFormat.Msi)
             packageName = "2B Companion"
             packageVersion = "1.0.0" // o MSI não aceita 0.x
+            windows {
+                iconFile.set(project.file("../design/icones/opcao-07.ico"))
+                menuGroup = "2B Companion"
+            }
             modules("java.net.http", "jdk.unsupported")
         }
     }

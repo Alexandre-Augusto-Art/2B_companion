@@ -188,6 +188,34 @@ class DailyTest {
         assertNull(a.last.guide)
     }
 
+    @Test fun `AIGF pede idade uma vez, muda o tom e desliga`() {
+        fakeModel()
+        val e = Recorder()
+        val a = app(e)
+        a.ask("#AIGF")
+        assertTrue(a.state.value.askAdult && !a.state.value.settings.aigf && e.requests.isEmpty())
+        a.confirmAdult(false)
+        assertFalse(a.state.value.settings.aigf)
+        a.ask("#aigf")
+        a.confirmAdult(true)
+        assertTrue(a.state.value.settings.aigf && a.state.value.settings.adult)
+        a.ask("senti sua falta hoje")
+        assertTrue("MODO AIGF" in e.requests.last().system && e.requests.last().temperature > 0.8)
+        assertTrue(e.requests.last().history.none { "#" in it.text }, "comando não vai para a IA")
+        a.ask("caí num golpe do pix")
+        assertTrue("Faz isso, com calma" in a.last.text, "urgência continua com o guia conferido")
+        a.ask("#AIGF")
+        assertFalse(a.state.value.settings.aigf)
+        a.ask(" #AiGf ")
+        assertTrue(a.state.value.settings.aigf && !a.state.value.askAdult, "a idade só é pedida uma vez")
+        a.ask("oi")
+        a.ask("#AIGF")
+        a.ask("oi de novo")
+        assertFalse("MODO AIGF" in e.requests.last().system)
+        runBlocking { withTimeout(10_000) { a.panic(includeModels = false).join() } }
+        assertFalse(a.state.value.settings.aigf || a.state.value.settings.adult)
+    }
+
     @Test fun `lista de ferramentas sai do conteúdo do site`() {
         val a = app()
         a.ask(Tool.TOOLS.ask)

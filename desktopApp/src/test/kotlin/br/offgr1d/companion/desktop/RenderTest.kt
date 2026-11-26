@@ -10,6 +10,8 @@ import br.offgr1d.companion.store.BlobStore
 import br.offgr1d.companion.ui.AlertActions
 import br.offgr1d.companion.ui.CompanionApp
 import br.offgr1d.companion.ui.PlatformActions
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
@@ -54,6 +56,33 @@ class RenderTest {
             scene.close()
             scope.cancel()
         }
+    }
+
+    /** Os três quadros do rosto, grandes, para conferir contra a arte original. */
+    @Test fun rosto() {
+        val scene = ImageComposeScene(900, 260, Density(1f)) {
+            androidx.compose.foundation.layout.Row {
+                listOf(br.offgr1d.companion.chat.Mood.IDLE, br.offgr1d.companion.chat.Mood.ALERT).forEach { m ->
+                    br.offgr1d.companion.ui.Face(m, androidx.compose.ui.Modifier.size(androidx.compose.ui.unit.DpSize(300.dp, 243.dp)))
+                }
+                androidx.compose.foundation.Canvas(androidx.compose.ui.Modifier.size(androidx.compose.ui.unit.DpSize(300.dp, 243.dp))) {
+                    val k = size.width / br.offgr1d.companion.ui.FaceArt.WIDTH
+                    br.offgr1d.companion.ui.FaceFrame.entries.drop(1).forEachIndexed { i, f ->
+                        f.shapes.forEach { s ->
+                            val p = androidx.compose.ui.graphics.Path().apply {
+                                fillType = androidx.compose.ui.graphics.PathFillType.EvenOdd
+                                s.rings.forEach { r -> moveTo(r[0] * k / 2 + i * size.width / 2, r[1] * k / 2 + 60f); for (j in 2 until r.size step 2) lineTo(r[j] * k / 2 + i * size.width / 2, r[j + 1] * k / 2 + 60f); close() }
+                            }
+                            drawPath(p, br.offgr1d.companion.ui.Palette.Face)
+                        }
+                    }
+                }
+            }
+        }
+        val png = scene.render(0).encodeToData(EncodedImageFormat.PNG)!!.bytes
+        scene.close()
+        File("build/render").mkdirs()
+        File("build/render/rosto.png").writeBytes(png)
     }
 
     @Test fun inicio() = render("inicio", compact = false) {}

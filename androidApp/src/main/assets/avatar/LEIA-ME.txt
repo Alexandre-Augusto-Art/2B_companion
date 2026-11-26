@@ -1,1 +1,0 @@
-Coloque aqui idle.png, thinking.png, talking.png e alert.png. Veja docs/AVATAR.md.

@@ -3,11 +3,12 @@
 Companheira de IA do [0FF-GR1D](https://alexandre-augusto-art.github.io/0FF-GR1D_WEB/). Conversa, checa links e boatos,
 orienta sobre segurança digital e manifestações. A IA roda no aparelho.
 
-**Estado: 0.2, em desenvolvimento.** O Android compila, mas ainda não foi testado em celular. O Windows é só a base. A IA foi testada no Windows com
+**Estado: 0.3, em desenvolvimento.** O Android compila, mas ainda não foi testado em celular. No Windows, a versão de teste abre e conversa. A IA foi testada no Windows com
 Qwen3 0.6B e Gemma 4 E2B (texto e imagem).
 
 ## O que faz
 
+- Tem rosto e história: pisca, mexe a boca ao responder e fica vermelha em alerta. Veja [a personagem](docs/PERSONAGEM.md).
 - Conversa no dia a dia, com personalidade de ativista hacker, por cima de outros apps (bolha) ou como assistente do Android.
 - Traz a notícia do W4K3 PR0T0C0L, a mensagem do dia, os próximos atos por estado, o que levar a um protesto e as ferramentas do site.
 - Avisa quando sai novidade, com notificação comum do Android e mensagem na conversa. Sem servidor: o app consulta o site.
@@ -46,6 +47,8 @@ Se o Gradle falhar com `Unable to establish loopback connection` no Windows, def
 | `desktopApp` | janela flutuante, captura, DPAPI |
 
 Voz e regras da 2B: `core/.../chat/Persona.kt`. Guias: `core/src/main/resources/seed/guides.json`.
+
+Windows sem instalar: `./gradlew :desktopApp:createDistributable` gera `desktopApp/build/compose/binaries/main/app/2B Companion/`.
 
 Mais: [privacidade](docs/PRIVACIDADE.md) · [arte da personagem](docs/AVATAR.md) · [próximos passos](docs/ROADMAP.md)
 

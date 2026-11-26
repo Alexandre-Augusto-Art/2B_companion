@@ -26,6 +26,7 @@ class KnowledgeBase(
         val docs = ArrayList<Doc>()
         docs += FeedParser.parse("guides", seed("guides")!!)
         docs += FeedParser.parse("extras", seed("extras")!!)
+        docs += FeedParser.parse("lore", seed("lore")!!)
         var reflections = emptyList<Reflection>()
         var quotes = emptyList<Quote>()
         var acts = emptyList<Act>()

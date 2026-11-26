@@ -23,7 +23,7 @@ class KnowledgeTest {
         {"titulo":"sem id"}, "lixo"]}"""
 
     private val index = KnowledgeIndex(
-        FeedParser.parse("guides", seed("guides")) + FeedParser.parse("chatbot", seed("chatbot")) +
+        FeedParser.parse("guides", seed("guides")) + FeedParser.parse("lore", seed("lore")) + FeedParser.parse("chatbot", seed("chatbot")) +
             FeedParser.parse("organize", organize),
     )
 
@@ -36,6 +36,9 @@ class KnowledgeTest {
         assertEquals("guia:direitos-ato", top("quais meus direitos se a polícia me abordar no protesto"))
         assertEquals("guia:direitos-ato", top("quais meus direitos num protesto?"))
         assertEquals("guia:gas-ato", top("e se jogarem gás?"))
+        assertEquals("historia:eva", top("quem é a EVA?"))
+        assertEquals("historia:psicofago", top("como funciona o seu psicófago?"))
+        assertEquals("historia:passado", top("me conta do seu passado"))
         assertEquals("site:facescan", top("o que é o F4C3 SC4N"))
     }
 
