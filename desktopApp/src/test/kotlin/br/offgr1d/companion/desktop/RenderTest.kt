@@ -45,7 +45,7 @@ class RenderTest {
         app.awaitReady()
         app.prepare()
         val scene = ImageComposeScene(412, height, Density(1f)) {
-            CompanionApp(app, PlatformActions(openUrl = {}, captureScreen = {}, alerts = AlertActions({}, {}, true, {}), pickMedia = {}), compact, onClose = if (compact) ({}) else null, startTab = tab)
+            CompanionApp(app, PlatformActions(openUrl = {}, captureScreen = {}, alerts = AlertActions({}, {}, true, {}), pickMedia = {}, saveVideo = { _, _ -> }, shareVideo = { _, _, _ -> }), compact, onClose = if (compact) ({}) else null, startTab = tab)
         }
         try {
             repeat(5) { scene.render(it * 50_000_000L) }
@@ -69,6 +69,13 @@ class RenderTest {
             state.value.messages.last().media?.posterUrl?.let { picture(it) }
         }
         attachScreen(ScreenContext(null, png, Attachment.VIDEO))
+    }
+
+    @Test fun `nome e texto do vídeo ao salvar e compartilhar`() {
+        val u = br.offgr1d.companion.knowledge.FeedParser.SITE + "assets/videos/w4k3/2026-11-26.mp4"
+        kotlin.test.assertEquals("0FF-GR1D-W4K3-2026-11-26.mp4", br.offgr1d.companion.ui.videoName(u))
+        kotlin.test.assertTrue("w4k3-protocol.html" in br.offgr1d.companion.ui.shareText(u))
+        kotlin.test.assertEquals("0FF-GR1D-a_b.mp4", br.offgr1d.companion.ui.videoName(br.offgr1d.companion.knowledge.FeedParser.SITE + "x/a b"))
     }
 
     /** Os três quadros do rosto, grandes, para conferir contra a arte original. */

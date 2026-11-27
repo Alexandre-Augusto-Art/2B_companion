@@ -14,6 +14,7 @@ Qwen3 0.6B e Gemma 4 E2B (texto e imagem).
 - Avisa quando sai novidade, com notificação comum do Android e mensagem na conversa. Sem servidor: o app consulta o site.
   O aviso do W4K3 traz a capa e o vídeo. O de atos traz só convocações com data, no seu estado, que dá para ir pessoalmente.
 - Recebe fotos e vídeos: a 2B vê a foto, ou 4 quadros do vídeo, sem som. No Windows, só fotos por enquanto.
+- O vídeo do W4K3 toca na conversa com voltar e adiantar 10 s, pausar, barra de tempo e som, e tem SALVAR e COMPARTILHAR. No Windows, abre no player do sistema e tem só SALVAR.
 - Lê a tela quando você pede ou, se você ligar, sempre que tocar na bolha. A leitura só é usada se você enviar.
 - Analisa links sem abri-los, com as mesmas regras do Fact Check do site.
 - Responde com o conteúdo do 0FF-GR1D e guias embutidos, mostrando as fontes.

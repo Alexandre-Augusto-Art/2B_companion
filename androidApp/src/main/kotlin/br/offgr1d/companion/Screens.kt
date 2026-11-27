@@ -96,6 +96,20 @@ abstract class BaseActivity : ComponentActivity() {
         pickMedia = { runCatching { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) } },
         videoPlayer = { file, modifier -> VideoPlayer(file, modifier) },
         openFile = {},
+        saveVideo = { file, name ->
+            app.scope.launch(Dispatchers.IO) {
+                runCatching { VideoShare.save(applicationContext, file, name) }
+                    .onSuccess { companion.notice("Vídeo salvo na galeria, em Filmes/${VideoShare.FOLDER}. O pânico não apaga essa cópia.") }
+                    .onFailure { companion.notice("Não consegui salvar o vídeo.") }
+            }
+        },
+        shareVideo = { file, name, text ->
+            app.scope.launch(Dispatchers.IO) {
+                runCatching { VideoShare.intent(applicationContext, file, name, text) }
+                    .onSuccess { i -> runOnUiThread { open(i) } }
+                    .onFailure { companion.notice("Não consegui preparar o vídeo para compartilhar.") }
+            }
+        },
     )
 
     /** Sai da frente antes de ler: o que interessa é o app de baixo. */

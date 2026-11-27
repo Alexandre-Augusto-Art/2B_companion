@@ -56,6 +56,17 @@
             android:taskAffinity=""
             android:theme="@style/Theme.TwoB.Invisible" />
 
+        <!-- Entrega o vídeo que a pessoa escolheu compartilhar -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Procura novidades do site para os avisos -->
         <service
             android:name=".alerts.AlertJob"

@@ -98,6 +98,19 @@ fun pickPhoto(companion: Companion2B) {
     companion.attachScreen(ScreenContext(null, toJpeg(img), Attachment.PHOTO))
 }
 
+/** Salva uma cópia do vídeo onde a pessoa escolher. */
+fun saveVideo(companion: Companion2B, file: File, name: String) {
+    val dialog = FileDialog(null as Frame?, "Salvar vídeo", FileDialog.SAVE).apply {
+        this.file = name
+        isVisible = true
+    }
+    val chosen = dialog.file ?: return
+    val target = File(dialog.directory, if (chosen.contains('.')) chosen else "$chosen.mp4")
+    runCatching { file.copyTo(target, overwrite = true) }
+        .onSuccess { companion.notice("Vídeo salvo em ${target.path}. O pânico não apaga essa cópia.") }
+        .onFailure { companion.notice("Não consegui salvar o vídeo.") }
+}
+
 private val appIcon: BitmapPainter? =
     Companion2B::class.java.getResourceAsStream("/icone.png")?.use { BitmapPainter(it.readBytes().decodeToImageBitmap()) }
 
@@ -132,6 +145,7 @@ private fun gui() = application {
             autoScreenNote = "Ao abrir a conversa pelo símbolo da 2B. Fica só na memória e só é usada se você enviar.",
             pickMedia = { pickPhoto(companion) },
             pickLabel = "FOTO",
+            saveVideo = { f, name -> saveVideo(companion, f, name) },
             openFile = { f -> runCatching { Desktop.getDesktop().open(f) }.onFailure { companion.notice("Não achei um player de vídeo no Windows.") } },
         )
     }

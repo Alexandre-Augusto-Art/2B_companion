@@ -6,12 +6,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,7 +35,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.offgr1d.companion.chat.Companion2B
 import br.offgr1d.companion.chat.Media
+import br.offgr1d.companion.knowledge.FeedParser
 import br.offgr1d.companion.screen.Attachment
+import java.io.File
 import kotlinx.coroutines.launch
 
 private fun decode(bytes: ByteArray): ImageBitmap? = runCatching { bytes.decodeToImageBitmap() }.getOrNull()
@@ -41,6 +47,17 @@ fun Thumb(bytes: ByteArray, modifier: Modifier = Modifier) {
     val img = remember(bytes) { decode(bytes) } ?: return
     Image(img, null, modifier.clip(RoundedCornerShape(6.dp)), contentScale = ContentScale.Crop)
 }
+
+/** Nome do arquivo ao salvar ou compartilhar: "0FF-GR1D-W4K3-2026-11-26.mp4". */
+fun videoName(url: String): String {
+    val base = url.substringAfterLast('/').substringBefore('?').replace(Regex("[^A-Za-z0-9._-]"), "_").ifEmpty { "video.mp4" }
+    val tag = if ("/w4k3/" in url) "0FF-GR1D-W4K3-" else "0FF-GR1D-"
+    return tag + if (base.contains('.')) base else "$base.mp4"
+}
+
+/** Texto que vai junto ao compartilhar: de onde veio o vídeo. */
+fun shareText(url: String) =
+    if ("/w4k3/" in url) "W4K3 PR0T0C0L, do 0FF-GR1D: ${FeedParser.SITE}w4k3-protocol.html" else "Do 0FF-GR1D: ${FeedParser.SITE}"
 
 /**
  * Foto ou vídeo numa mensagem. O vídeo do site só baixa quando a pessoa toca, a não ser que o aviso já tenha baixado.
@@ -58,25 +75,24 @@ fun MediaView(media: Media, app: Companion2B, platform: PlatformActions, modifie
     var playing by remember(url) { mutableStateOf(false) }
     var status by remember(url) { mutableStateOf<String?>(null) }
 
-    fun play() {
+    /** Baixa se ainda não estiver no aparelho e então faz [then]. */
+    fun withFile(then: (File) -> Unit) {
         if (url == null || status == "BAIXANDO") return
-        val ready = file
-        if (ready != null) {
-            if (platform.videoPlayer != null) playing = true else platform.openFile(ready)
-            return
-        }
+        file?.let { return then(it) }
         status = "BAIXANDO"
         scope.launch {
             runCatching { app.video(url) }
-                .onSuccess { f -> file = f; status = null; if (platform.videoPlayer != null) playing = true else platform.openFile(f) }
+                .onSuccess { f -> file = f; status = null; then(f) }
                 .onFailure { e -> status = "NÃO BAIXOU: ${e.message ?: "sem rede"}" }
         }
     }
 
-    Column(modifier) {
+    fun play() = withFile { f -> if (platform.videoPlayer != null) playing = true else platform.openFile(f) }
+
+    val ratio = if (media.kind == Attachment.VIDEO && url != null) 9f / 16f else poster?.let { it.width.toFloat() / it.height } ?: 1f
+    Column(modifier.widthIn(max = if (ratio < 1f) 240.dp else 320.dp)) {
         val shape = RoundedCornerShape(8.dp)
-        val ratio = if (media.kind == Attachment.VIDEO && url != null) 9f / 16f else poster?.let { it.width.toFloat() / it.height } ?: 1f
-        val frame = Modifier.widthIn(max = if (ratio < 1f) 240.dp else 320.dp).aspectRatio(ratio.coerceIn(0.4f, 2.5f))
+        val frame = Modifier.fillMaxWidth().aspectRatio(ratio.coerceIn(0.4f, 2.5f))
             .clip(shape).border(1.dp, Palette.Line, shape).background(Palette.Bg)
         val ready = file
         val player = platform.videoPlayer
@@ -95,6 +111,12 @@ fun MediaView(media: Media, app: Companion2B, platform: PlatformActions, modifie
                 }
             }
         }
+        if (url != null && (platform.saveVideo != null || platform.shareVideo != null)) {
+            Row {
+                platform.saveVideo?.let { save -> MediaButton("SALVAR") { withFile { f -> save(f, videoName(url)) } } }
+                platform.shareVideo?.let { share -> MediaButton("COMPARTILHAR") { withFile { f -> share(f, videoName(url), shareText(url)) } } }
+            }
+        }
         val note = when {
             status != null && status != "BAIXANDO" -> status
             url != null && ready == null -> "Vídeo do 0FF-GR1D. Baixa ao tocar."
@@ -104,3 +126,9 @@ fun MediaView(media: Media, app: Companion2B, platform: PlatformActions, modifie
         note?.let { Text(it, color = Palette.Dim, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
     }
 }
+
+@Composable
+private fun MediaButton(label: String, onClick: () -> Unit) =
+    TextButton(onClick, contentPadding = PaddingValues(horizontal = 8.dp)) {
+        Text(label, color = Palette.Cyan, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+    }

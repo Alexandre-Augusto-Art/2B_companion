@@ -17,7 +17,7 @@ veem seu IP.
 ## O que fica guardado
 
 Ajustes, memórias, cópia do conteúdo do site, os últimos 20 avisos e, se você ligar, conversas. Cifrados com AES-256-GCM: chave no Keystore
-(Android) ou protegida pela conta do Windows. Capturas, fotos e vídeos que você manda ficam só na memória: a conversa guardada leva só o texto. Os últimos 5 vídeos do W4K3 ficam no cache do app e somem no pânico. Backup do sistema desligado no Android.
+(Android) ou protegida pela conta do Windows. Capturas, fotos e vídeos que você manda ficam só na memória: a conversa guardada leva só o texto. Os últimos 5 vídeos do W4K3 ficam no cache do app e somem no pânico. Se você tocar em SALVAR, a cópia vai para a galeria (Filmes/0FF-GR1D) ou para a pasta escolhida no Windows, e o pânico não apaga essa cópia. COMPARTILHAR entrega o vídeo só ao app que você escolher. Backup do sistema desligado no Android.
 
 ## Limites, sem promessa
 

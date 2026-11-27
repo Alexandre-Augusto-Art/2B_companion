@@ -108,6 +108,10 @@ class PlatformActions(
     /** Toca um vídeo baixado dentro do app; null abre no player do sistema com [openFile]. */
     val videoPlayer: (@Composable (File, Modifier) -> Unit)? = null,
     val openFile: (File) -> Unit = {},
+    /** Guarda uma cópia do vídeo fora do app (galeria ou pasta), com o nome dado; null se não houver. */
+    val saveVideo: ((File, String) -> Unit)? = null,
+    /** Manda o vídeo para outro app (redes, mensagens), com o nome e o texto dados; null se não houver. */
+    val shareVideo: ((File, String, String) -> Unit)? = null,
 )
 
 class AlertActions(
